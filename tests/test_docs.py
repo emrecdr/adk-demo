@@ -45,9 +45,9 @@ def _tree_files() -> set[str]:
 
 def _in_the_working_tree() -> set[str]:
     """Tracked files plus new ones git does not ignore: a file is drawn before it is committed, not after."""
-    argv = ["git", "ls-files", "--cached", "--others", "--exclude-standard"]
+    argv = ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"]  # -z: a name may hold a space
     done = subprocess.run(argv, cwd=ROOT, capture_output=True, encoding="utf-8", check=True)
-    return set(done.stdout.split())
+    return {path for path in done.stdout.split("\0") if path}
 
 
 def test_the_maps_tree_draws_every_file_in_the_working_tree_and_nothing_else() -> None:

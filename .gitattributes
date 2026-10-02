@@ -1,0 +1,5 @@
+# Every text file is LF in every checkout, whatever core.autocrlf says on the machine, so a commit made on Windows
+# changes no line endings; the slide exports are binary.
+* text=auto eol=lf
+*.pdf binary
+*.pptx binary

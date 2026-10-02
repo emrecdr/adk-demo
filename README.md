@@ -9,6 +9,10 @@ on its own, and every step runs on GitHub Copilot, the arm the talk is given
 on, and on Gemini. A seventh,
 optional phase regroups the result by dependency direction and hardens it.
 
+The talk's slides are in `docs/presentation/`: the PDF, and the PPTX with and
+without the speaker notes, each in the deck's fonts and in basic fonts (Arial,
+Courier New) for a machine that lacks them.
+
 What ADK adds over a single agent file, where one prompt sets every step: it
 lets code control the whole process, so every run takes the same steps in the
 same order, every step can be observed, and a model's judgement is used
@@ -186,7 +190,10 @@ Phase 7 is the same command with `--verify`, `--max-tokens N`,
 `--profile NAME`, `--path DIR` and `--all` added, and `--head` the branch
 checked out when not named; its README shows a run of each. With neither
 `--base` nor `--all`, a person at a terminal is asked which, and a
-pipeline reviews the change against `main`, or `master`. The defaults of
+pipeline reviews the change against `main`, or `master`. A pipeline checks
+out a detached commit, and one commit deep unless told otherwise (GitHub
+Actions and Azure Pipelines alike), so name `--head` there and fetch the base
+branch with its history, or review the whole head with `--all`. The defaults of
 `--fail-on`, `--max-tokens` and `--verify`, ruff's rules and what it ignores, and the
 profiles live in one file, `phase_7_hardened/config.toml`; a flag
 overrides its setting for one run, and with no `--profile` a review runs
@@ -234,9 +241,10 @@ claims match the bytes. Live answers need the key or the Copilot token.
 ## Windows
 
 Every command above runs on Windows 10 and 11 with Git for Windows (2.41
-or later, on `PATH`) and `uv`, and `.github/workflows/ci.yml` runs the
-whole offline suite on Windows, Linux and macOS on every push. PowerShell 7
-takes the commands as written. What differs:
+or later, on `PATH`) and `uv`, and the whole offline suite runs on Windows,
+Linux and macOS on every push: `.github/workflows/ci.yml` on GitHub,
+`azure-pipelines.yml` on Azure DevOps. PowerShell 7 takes the commands as
+written. What differs:
 
 - **A variable for one command.** `REVIEW_PROVIDER=gemini uv run …` is a
   POSIX shell's. In PowerShell, `$env:REVIEW_PROVIDER = "gemini"` first and

@@ -58,16 +58,24 @@ Each arrow down the page is "copy the folder, add one thing".
 adk_review_demo/
 ├── .env                      # ONE file, shared by every phase (gitignored)
 ├── .env.example
+├── .gitattributes            # LF in every checkout, whatever core.autocrlf says on the machine; the slide exports are binary
 ├── .github/
 │   └── workflows/
 │       └── ci.yml            # lint and the offline suite on Windows, Linux and macOS, on every push
+├── azure-pipelines.yml       # the same checks on Azure DevOps, where the repository is also kept
 ├── .python-version           # 3.13: every measurement here ran on it, and `>=3.13` alone let uv pick a newer one
 ├── pyproject.toml            # google-adk[extensions]==2.9.2 (extensions brings litellm, the Copilot arm), python-dotenv
 ├── Makefile                  # optional: the same uv commands as targets, for those who like make
 ├── README.md                 # how to run the demo in five minutes
 ├── CLAUDE.md                 # guidance for Claude Code: commands, the phase rules, what the tests pin
 ├── docs/
-│   └── ITERATION_MAP.md      # this file
+│   ├── ITERATION_MAP.md      # this file
+│   └── presentation/         # the talk's slides, exported from the deck; "basic fonts" = Arial and Courier New, for a machine without the deck's
+│       ├── ADK_Code_Reviewer_KT.pdf
+│       ├── ADK_Code_Reviewer_KT.pptx                        # without the speaker notes
+│       ├── ADK_Code_Reviewer_KT_with_notes.pptx             # with them
+│       ├── ADK_Code_Reviewer_KT_basic_fonts.pptx            # without the notes, basic fonts
+│       └── ADK_Code_Reviewer_KT_basic_fonts_with_notes.pptx # with the notes, basic fonts
 ├── scripts/
 │   ├── make_demo_repo.py     # builds the throwaway repository the demo reviews; --fix commits the two fixes
 │   ├── ask.py                # one headless turn through any phase: uv run python scripts/ask.py <phase> '...'
@@ -574,7 +582,7 @@ the phase's lesson.
 `google-adk[extensions]==2.9.2`, `python-dotenv`), `.env.example`,
 `.gitignore`, an optional `Makefile`, `README.md`, and
 `scripts/make_demo_repo.py`, which builds the repository under review
-idempotently. Each later step is its own commit, tagged `phase-N`.
+idempotently. Each later step adds one folder.
 
 **Step 1 — phase 1.** Three files. Acceptance: a greeting returns on both
 arms, after the one-time Copilot login (`scripts/copilot_login.py`).
@@ -635,8 +643,8 @@ review; a change that works on one arm is not finished.
   folder that reads alone and a diff between two folders that is the lesson.
 - **Folders, not stacked branches.** A branch per phase would make every
   phase switch a checkout and a server restart, and a phase 2 fix a rebase.
-  Folders keep all seven phases in one `adk web .` dropdown; each phase
-  still lands as its own commit, tagged `phase-1` … `phase-7`.
+  Folders keep all seven phases in one `adk web .` dropdown, and a phase's
+  lesson is `git diff --no-index` between neighbouring folders, not a commit.
 - **Phase 7 is optional, and it regroups before it adds.** Six phases teach
   ADK; the seventh answers "how would this grow?". It regroups by
   dependency direction first, because each hardening item then lands in
@@ -849,7 +857,8 @@ review; a change that works on one arm is not finished.
   audited against Windows: git's timeout now stops the whole process tree,
   git and ruff are found by full path rather than the current directory,
   every pathspec is `top`, a UTF-16 `.env` is exit 2, and committed files
-  use `\n`. CI (`.github/workflows/ci.yml`) runs the suite on Windows.
+  use `\n`. CI (`.github/workflows/ci.yml`, and `azure-pipelines.yml` on
+  Azure DevOps) runs the suite on Windows.
 - **One config file for phase 7.** At the user's request, phase 7's
   profiles and review policy live in `config.toml` beside `review.py`, in
   `[review]`, `[lint]` and `[profiles]`. A flag still wins for one run.
