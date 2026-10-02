@@ -74,6 +74,8 @@ adk_review_demo/
 │   │   │   └── SKILL.md
 │   │   ├── docs-tree/
 │   │   │   └── SKILL.md
+│   │   ├── new-lane/
+│   │   │   └── SKILL.md
 │   │   ├── new-rule/
 │   │   │   └── SKILL.md
 │   │   └── review-a-branch/

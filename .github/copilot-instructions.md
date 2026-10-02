@@ -1,10 +1,23 @@
 # Copilot instructions for this repository
 
 This repository is a talk that teaches Google ADK (`google-adk[extensions]==2.9.2`, Python 3.13, `uv`) by building one
-small git-branch code reviewer in seven phase folders, `phase_1_hello_world` … `phase_7_hardened`. `CLAUDE.md` at the
-root is the long form of these instructions and `docs/ITERATION_MAP.md` the design record (§12 logs every decision
+small git-branch code reviewer in seven phase folders, one layer a phase: 1 a bare `Agent` → 2 a read-only git tool →
+3 more tools, `ToolContext.state` and a `before_tool_callback` guardrail → 4 a `Workflow` (collector → reviewer with
+`output_schema`) and a CLI → 5 fan-out to three lanes, `JoinNode`, a verdict agent → 6 evidence gathered in Python,
+lanes only judge, code decides the verdict, `App` with plugins → 7 phase 6 regrouped by dependency direction plus
+retries, a token ceiling, a ruff gate, `--verify`, each file's blast radius and a project's own rules. `CLAUDE.md` at
+the root is the long form of these instructions and `docs/ITERATION_MAP.md` the design record (§12 logs every decision
 measured live); read the relevant section before changing a phase. Path-specific rules sit in `.github/instructions/`,
 the recurring tasks in `.github/skills/`.
+
+## The talk
+
+Phases 1–6 are presented live, phase 7 is self-study. Each phase README is the script of its step, `scripts/rehearse.py`
+runs every phase's demo line in order (a demo message that changes in a README changes there too), and
+`docs/ITERATION_MAP.md` §13 is the presenter's checklist. `docs/presentation/` holds exports of the slide deck — a PDF,
+and PPTX with and without the speaker notes, in the deck's fonts and in basic fonts — binary files (`.gitattributes`)
+replaced whole from the deck, which lives outside the repository; a change the slides should reflect is reported to the
+presenter, not made here.
 
 ## Commands
 

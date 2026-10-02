@@ -12,8 +12,13 @@ applyTo: "**/*.md"
 - Each `phase_*/README.md` classifies every `*.py` directly in its folder against the previous phase in sentences
   like ``Changed: `agent.py`, `review.py`.`` — `New:`, `Changed:`, `Unchanged:`, `Gone:` or `Moved:`, backticked
   names, a period at the end, each file exactly once. The claims are checked against the bytes.
-- ITERATION_MAP needs a `## <section>. Phase <n> — ` section per phase folder; §12 is the log of decisions measured
-  live, and a measured number there is history and stays.
+- A phase README has `## What changed since phase <n-1>` (phase 1: `## What is here`), `## Run it` and
+  `## What to notice`, in that order, and may add one section of its own; `Run it` carries the phase's demo line as
+  `scripts/rehearse.py` runs it.
+- `docs/ITERATION_MAP.md`'s sections are fixed: what is taught, the iteration-map slide, the tree, one
+  `## <section>. Phase <n> — ` section per phase folder, the plan, §12 the decisions, §13 the presenter's checklist. A
+  §12 entry is one bullet, `- **What was decided.** why, and the measurement that settled it (arm, model, runs)`; a
+  measured number there is history and stays.
 - No dates (nothing here is a changelog) and no counts of the repository's current state: not how many tests, how
   long the suite takes, how many flags or example runs. Plain prose that says why, kept short; every claim about
   the code must be true of the code as it is.
