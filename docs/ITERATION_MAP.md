@@ -60,8 +60,27 @@ adk_review_demo/
 ├── .env.example
 ├── .gitattributes            # LF in every checkout, whatever core.autocrlf says on the machine; the slide exports are binary
 ├── .github/
+│   ├── copilot-instructions.md   # Copilot's guide to this repository: the short form of CLAUDE.md
+│   ├── pull_request_template.md  # the checklist the tests and CI enforce, for a person or an agent opening a pull request
+│   ├── agents/
+│   │   └── phase-author.agent.md # a custom Copilot agent that changes a phase the way the tests demand and carries it forward
+│   ├── instructions/             # path-specific Copilot instructions, each applied to the files its applyTo names
+│   │   ├── docs.instructions.md
+│   │   ├── phase-7.instructions.md
+│   │   ├── phases.instructions.md
+│   │   └── tests.instructions.md
+│   ├── skills/                   # agent skills for the recurring tasks
+│   │   ├── carry-forward/
+│   │   │   └── SKILL.md
+│   │   ├── docs-tree/
+│   │   │   └── SKILL.md
+│   │   ├── new-rule/
+│   │   │   └── SKILL.md
+│   │   └── review-a-branch/
+│   │       └── SKILL.md
 │   └── workflows/
-│       └── ci.yml            # lint and the offline suite on Windows, Linux and macOS, on every push
+│       ├── ci.yml                # lint and the offline suite on Windows, Linux and macOS, on every push
+│       └── copilot-setup-steps.yml # the cloud agent's environment before it starts: uv sync --locked
 ├── azure-pipelines.yml       # the same checks on Azure DevOps, where the repository is also kept
 ├── .python-version           # 3.13: every measurement here ran on it, and `>=3.13` alone let uv pick a newer one
 ├── pyproject.toml            # google-adk[extensions]==2.9.2 (extensions brings litellm, the Copilot arm), python-dotenv
@@ -89,7 +108,8 @@ adk_review_demo/
 │   ├── test_callbacks.py     # the path guardrail
 │   ├── test_review_graph.py  # phase 4 and 5 graphs through the real Workflow
 │   ├── test_reviewer.py      # phases 6 and 7: evidence, gate, grounding, dedupe, plugins, a failed lane, the report, exits 0/1/2/3
-│   ├── test_docs.py          # the map's tree and each README's file claims, read the way a reader does
+│   ├── test_copilot.py       # the files under .github hold to their formats: applyTo, front matter, one pinned commit per action
+│   ├── test_docs.py          # the map's tree, each README's file claims and the paths the guides name, read the way a reader does
 │   ├── test_failures.py      # a provider error is a sentence where the hook runs, a traceback where it does not; ask.py's two promises
 │   ├── test_hardened.py      # phase 7: retries on both arms, the ceiling, the ruff gate, the second opinion, the blast radius, rules and profiles
 │   ├── test_layering.py      # phase 7: every import points one way, and core and rules run nothing

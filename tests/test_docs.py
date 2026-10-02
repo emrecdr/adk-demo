@@ -1,4 +1,5 @@
-"""The docs are pinned to the tree they describe: the map's folder tree, and each phase README's file claims.
+"""The docs are pinned to the tree they describe: the map's folder tree, each phase README's file claims, and the
+paths the guides name.
 
 Three doc passes found the same rot by hand — a script or a test folder
 missing from the map's tree, a README naming a file as unchanged after it
@@ -11,10 +12,10 @@ nothing and pass.
 from __future__ import annotations
 
 import re
-import subprocess
+from pathlib import Path
 
 import pytest
-from conftest import PHASES, ROOT
+from conftest import PHASES, ROOT, in_the_working_tree
 
 MAP = ROOT / "docs" / "ITERATION_MAP.md"
 #: Files the tree leaves out on purpose, and the one file it draws that git ignores.
@@ -43,17 +44,37 @@ def _tree_files() -> set[str]:
     return files
 
 
-def _in_the_working_tree() -> set[str]:
-    """Tracked files plus new ones git does not ignore: a file is drawn before it is committed, not after."""
-    argv = ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"]  # -z: a name may hold a space
-    done = subprocess.run(argv, cwd=ROOT, capture_output=True, encoding="utf-8", check=True)
-    return {path for path in done.stdout.split("\0") if path}
-
-
 def test_the_maps_tree_draws_every_file_in_the_working_tree_and_nothing_else() -> None:
-    drawn, present = _tree_files(), _in_the_working_tree()
+    drawn, present = _tree_files(), in_the_working_tree()
     assert sorted(present - drawn - NOT_DRAWN) == [], "in the working tree but not in the map's tree"
     assert sorted(drawn - present - DRAWN_UNTRACKED) == [], "in the map's tree but not in the working tree"
+
+
+#: The guides a reader or an assistant follows, held to the paths they name. The phase READMEs name other
+#: repositories' paths too — the demo's `src/payments/charge.py`, a hostile branch's `X.py/y.py`, git's `refs/` — so
+#: they are not among them.
+GUIDES = [ROOT / "CLAUDE.md", ROOT / "README.md", *sorted((ROOT / ".github").rglob("*.md"))]
+#: A backticked path with a folder in it: a file by the dot in its name, a folder by its trailing slash.
+_PATH = re.compile(r"`((?:[\w.-]+/)+(?:[\w-]+\.[\w.]+)?)`")
+#: The one path a guide names that no checkout holds: `adk web`'s session store, written when it runs.
+NOT_IN_THE_REPOSITORY = {".adk/session.db"}
+
+
+def _present(name: str) -> bool:
+    """A file of the working tree or, ending in `/`, a folder one lies in — read from the root, or from inside a phase
+    folder: only phase 7 has sub-packages, and the guides name its `core/blast.py` beside the phase, as its docs do."""
+    present = in_the_working_tree()
+    return any(
+        root + name in present or (name.endswith("/") and any(p.startswith(root + name) for p in present))
+        for root in ("", *(f"{phase}/" for phase in PHASES))
+    )
+
+
+@pytest.mark.parametrize("guide", GUIDES, ids=lambda p: p.relative_to(ROOT).as_posix())
+def test_a_guide_names_only_paths_in_the_working_tree(guide: Path) -> None:
+    named = set(_PATH.findall(guide.read_text(encoding="utf-8"))) - NOT_IN_THE_REPOSITORY
+    missing = sorted(name for name in named if not _present(name))
+    assert missing == [], f"{guide.relative_to(ROOT)} names paths that are not in the working tree"
 
 
 def test_the_map_has_a_section_per_phase() -> None:

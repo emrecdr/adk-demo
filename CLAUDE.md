@@ -23,6 +23,7 @@ uv run adk run phase_2_preflight                 # terminal chat with one phase
 uv run python scripts/ask.py <phase> "message"   # one headless turn through any phase; exit 3 when an error escapes the engine (from phase 4 a failed agent's hook answers, exit 0)
 uv run python -m phase_6_reviewer.review [repo] --head feature/payments [--base main] [--fail-on …]
 uv run python -m phase_7_hardened.review [repo] [--head B] [--base main | --all] [--path DIR] [--fail-on …] [--verify | --no-verify] [--max-tokens N] [--profile NAME]
+uv run python -m phase_7_hardened.review --head feature/payments --base main --profile gates-only   # the demo reviewed by code alone: the gates and every rule, no model call, no key
 uv run python scripts/rehearse.py --dry-run      # every phase's demo line in order; --pause 65 for the free tier
 uv run python scripts/measure.py --runs 5 [--all] # live: per planted defect, how often a lane names it (--all: as a whole project)
 git diff --no-index -- phase_3_changed_files phase_4_first_review   # one phase's lesson (make diff FROM=… TO=…)
@@ -72,6 +73,10 @@ The suite is fully offline. `tests/conftest.py` registers a `FakeModel` in ADK's
 - ITERATION_MAP needs a `## <section>. Phase <n> — ` section per phase folder.
 
 The docs state no static counts of the repository's current state — how many tests, how long the suite takes, how many flags or example runs — since routine work makes each one stale. A measured number, as ITERATION_MAP §12 records it, is history and stays. The docs carry no dates either: none of them is a changelog.
+
+## Copilot's files
+
+`.github/copilot-instructions.md` is the short form of this file for GitHub Copilot, with path-specific rules in `.github/instructions/`, skills for the recurring tasks in `.github/skills/`, a custom agent in `.github/agents/` and the cloud agent's setup in `.github/workflows/copilot-setup-steps.yml`. A rule that changes here changes there too; `tests/test_copilot.py` holds those files to their format, and `tests/test_docs.py` holds every guide, this file included, to the paths it names.
 
 ## History
 

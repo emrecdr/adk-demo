@@ -15,6 +15,7 @@ plugins all run.
 
 from __future__ import annotations
 
+import functools
 import importlib
 import json
 import os
@@ -41,6 +42,16 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from make_demo_repo import build as build_demo_repo  # noqa: E402 -- needs the path above
 
 PHASES = sorted(p.name for p in ROOT.iterdir() if p.is_dir() and p.name.startswith("phase_"))
+
+
+@functools.cache
+def in_the_working_tree() -> frozenset[str]:
+    """Every tracked file and every new one git does not ignore, read once a session: a file is held to the docs
+    before it is committed, not after. `-z`, because a name may hold a space."""
+    argv = ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"]
+    done = subprocess.run(argv, cwd=ROOT, capture_output=True, encoding="utf-8", check=True)
+    return frozenset(path for path in done.stdout.split("\0") if path)
+
 
 CANNED_REVIEW = {
     "findings": [

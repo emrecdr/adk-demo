@@ -13,6 +13,9 @@ The talk's slides are in `docs/presentation/`: the PDF, and the PPTX with and
 without the speaker notes, each in the deck's fonts and in basic fonts (Arial,
 Courier New) for a machine that lacks them.
 
+Working with an assistant: `CLAUDE.md` is the guide for Claude Code, and
+`.github/` holds Copilot's.
+
 What ADK adds over a single agent file, where one prompt sets every step: it
 lets code control the whole process, so every run takes the same steps in the
 same order, every step can be observed, and a model's judgement is used
