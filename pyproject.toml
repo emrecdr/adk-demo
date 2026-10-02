@@ -1,0 +1,41 @@
+[project]
+name = "adk-review-demo"
+version = "0.1.0"
+description = "Google ADK by iteration: six phases from hello world to a small branch reviewer, on Gemini and on Copilot."
+requires-python = ">=3.13"
+dependencies = [
+    # `extensions` brings litellm, which is the Copilot arm. Pinned: every measurement in the docs was taken on it.
+    "google-adk[extensions]==2.9.2",
+    "python-dotenv>=1.0",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.24", "ruff>=0.12.8"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "strict"
+testpaths = ["tests"]
+pythonpath = ["."]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore:.*EXPERIMENTAL.*:UserWarning",
+    # pydantic on a TypedDict litellm declares with ReadOnly: litellm's own types, woken by the first litellm error built
+    "ignore:Item 'summary' on TypedDict class 'ChatCompletionReasoningItem':UserWarning",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "N", "ARG", "ASYNC", "RUF", "BLE001", "S607", "SIM", "RET", "C4", "PIE", "PT"]
+# SIM112 would upper-case Windows' own `SystemRoot` and `NoDefaultCurrentDirectoryInExePath`; PT018 would split
+# asserts that read as one sentence.
+ignore = ["SIM112", "PT018"]
+
+[tool.ruff.lint.per-file-ignores]
+# The demo's builder and the fixtures run the developer's own git in folders they made; the reviewer, which may run
+# inside a checkout under review, finds git by its full path and is held to S607.
+"scripts/make_demo_repo.py" = ["S607"]
+"scripts/measure.py" = ["S607"]
+"tests/*" = ["S607"]

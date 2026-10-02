@@ -1,0 +1,30 @@
+# Phase 7's one config file: how this reviewer reviews. It is read from this folder alone, never from the
+# repository under review, and read whole: a key it does not know, or one missing, is refused and named, never
+# ignored. A command-line flag overrides a setting for one run. The provider, the models and the keys are the
+# central .env's, which is never committed.
+
+[review]
+fail_on = "blocker"  # exit 1 at or above this severity: minor, major or blocker (--fail-on)
+max_tokens = 0       # stop spending past this many tokens; 0 is no ceiling (--max-tokens)
+verify = false       # a second opinion on each lane finding a gate has not already made (--verify, --no-verify)
+
+[lint]
+# ruff's rule set for the lint gate, run --isolated: errors, pyflakes, warnings, bugbear and bandit, then what a
+# reviewer asks for and no other check here makes, at ruff's own thresholds: complexity (C901: 10; PLR0911,
+# PLR0912, PLR0913, PLR0915: 6 returns, 12 branches, 5 arguments, 50 statements), blocking calls in async code
+# (ASYNC), a task created and dropped (RUF006), a debugger call left in (T100) and commented-out code (ERA001).
+rules = [
+    "E", "F", "W", "B", "S", "C90", "PLR0911", "PLR0912", "PLR0913", "PLR0915", "ASYNC", "RUF006", "T100", "ERA001",
+]
+ignore = []                        # ruff rule codes the gate leaves out, "E501" or "S101" say; empty for none
+
+# Named lists of the checks a review runs, chosen with --profile NAME. With no --profile a review runs `default`:
+# every built-in check (secrets, lint, lane.security, lane.tests, lane.complexity) and every rule in rules/, so a
+# new rule runs until a profile leaves it off. A profile here narrows that, naming what it runs by id.
+[profiles]
+# No model at all: code alone decides, the gates and every rule of the folder, fast enough for every push, and no
+# key needed. A profile names what it runs, so a new rule is added here by hand.
+gates-only = [
+    "secrets", "lint", "derives-from", "module-defines", "money-in-cents", "no-print", "parameters", "private-patch",
+    "required-paths", "reviewer-instructions", "tests-offline",
+]
