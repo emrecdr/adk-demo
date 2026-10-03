@@ -7,9 +7,9 @@ small git-branch code reviewer in seven phase folders, one layer a phase: 1 a ba
 lanes only judge, code decides the verdict, `App` with plugins → 7 phase 6 regrouped by dependency direction plus
 retries, a token ceiling, a ruff gate, `--verify`, each file's blast radius, fences with a nonce around all the lanes
 read, a project's own rules of three kinds (a line, a file, the tree) chosen by profile, and what a review covers
-(`--path`, `--all`, `--dry-run`). `CLAUDE.md` at the root is the long form of these instructions and
-`docs/ITERATION_MAP.md` the design record (§12 logs every decision measured live); read the relevant section before
-changing a phase. Path-specific rules sit in `.github/instructions/`, the recurring tasks in `.github/skills/`.
+(`--path`, `--all`). `CLAUDE.md` at the root is the long form of these instructions and `docs/ITERATION_MAP.md` the
+design record (§12 logs every decision measured live); read the relevant section before changing a phase.
+Path-specific rules sit in `.github/instructions/`, the recurring tasks in `.github/skills/`.
 
 ## The talk
 
@@ -28,11 +28,9 @@ presenter, not made here.
 - `uv run pytest -q tests/test_docs.py` after adding, removing or renaming any file; `-k phase_6` for one phase.
 - `uv run python scripts/make_demo_repo.py` builds the demo repository the reviewer reviews (`--fix` commits its two
   fixes); `uv run python -m phase_7_hardened.review --head feature/payments --base main --profile gates-only` reviews
-  it with no model call, as do `--check ID` (one check alone), `--dry-run` (what a review would cover and run, nothing
-  run) and `--list-rules`; `uv run python scripts/rehearse.py --dry-run` prints every phase's demo line and runs
-  nothing. Every other review command, `uv run adk web .`, `uv run adk run <phase>`, `scripts/ask.py`,
-  `scripts/rehearse.py` without `--dry-run` and `scripts/measure.py` call a provider: run them only when the task says
-  so.
+  it with no model call, `--check ID`, `--dry-run` and `--list-rules` make none either, and `scripts/rehearse.py
+  --dry-run` only prints the demo lines. Every other review or chat command calls a provider — `adk web`, `adk run`,
+  `scripts/ask.py`, `scripts/rehearse.py` and `scripts/measure.py` — so run one only when the task says so.
 
 ## Rules the tests enforce
 

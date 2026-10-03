@@ -135,8 +135,8 @@ The additions:
   a profile that is no list, turns nothing on or names a rule no one
   wrote, a rule file that will not load and an id two rules share are each
   a sentence and exit 2 before anything runs; a rule that raises, or exits,
-  or a tree rule that could not look, a file it asked for not read whole or
-  the head's tree not listed, is named under `gate_rules` and the run is
+  or one that could not look — a file it asked for not read whole, or the
+  head's tree not listed — is named under `gate_rules` and the run is
   degraded, exit 3. With no lane
   on, a file cut at the diff cap is no hole: the cap is the lanes' limit,
   and the gates and the rules read every added line.

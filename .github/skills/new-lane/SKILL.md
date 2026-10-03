@@ -18,9 +18,10 @@ sections, `SOURCES` and the report, and phase 7's `lane.<name>` check id all rea
    that lists lanes must name `lane.<name>`; `gates-only` lists none and stays as it is.
 3. Tests: `tests/test_reviewer.py` and `tests/test_hardened.py` name the three lanes and count them in places; run them,
    and extend each assertion the new lane breaks rather than loosening it.
-4. Docs: the lanes are named, or counted as three, in `README.md`, `CLAUDE.md`, `.github/copilot-instructions.md`,
-   the phase 6 and 7 READMEs, the comment over `[profiles]` in `phase_7_hardened/config.toml` and
-   `docs/ITERATION_MAP.md` §2 and §8–§10; a search for `three lanes` and `lane.security` finds each place, and each
-   is updated. The deck says three as well: report that to the presenter, and do not touch `docs/presentation/`.
+4. Docs: a case-insensitive search for `three lanes`, `lane.security` and `security, tests, complexity` finds every
+   place that names or counts the lanes, the comment over `[profiles]` in `phase_7_hardened/config.toml` and the
+   docstrings of phases 6 and 7 among them. Update each, except phase 5, where three is the lesson, and a measured
+   number, which is history. The deck says three as well: report that to the presenter, and do not touch
+   `docs/presentation/`.
 5. Run the whole suite and the lint. Measure the lane live only when asked — `uv run python scripts/measure.py --runs 5`
    calls a provider — and record a decision it settles in §12.
