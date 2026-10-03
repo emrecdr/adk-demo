@@ -171,12 +171,14 @@ adk_review_demo/
     │   ├── __init__.py
     │   ├── blast.py          # what depends on each changed file at the head, read from the syntax tree
     │   ├── findings.py       # Finding, Review, the severity scale
-    │   ├── rules.py          # the Rule and the TreeRule a project writes, what they find, the profile chosen
+    │   ├── rules.py          # the Rule, the FileRule and the TreeRule a project writes, what they read and find, the profile chosen
     │   ├── secrets.py        # the credential shapes, scrub, the secrets gate
     │   ├── text.py           # the two string rules every group shares: flat whitespace, a cut that names itself
     │   └── verdict.py        # grounding, folding, deciding; Outcome
     ├── rules/                # a project's own rules, one a file; may import core
-    │   ├── __init__.py       # finds the rules, line rules and tree rules alike
+    │   ├── __init__.py       # finds the rules, of all three kinds; self_check reads a rule's own source as added lines
+    │   ├── _template.py      # the copy-ready shape of a rule, left aside by discovery: copy it under a new name
+    │   ├── README.md         # how to write a rule: the three kinds with an example each, trying one, testing one
     │   ├── derives_from.py   # a tree rule: a class named like this derives from that
     │   ├── module_defines.py # a tree rule: a module defines these names
     │   ├── money_in_cents.py # the payments project's rule: money stays in whole cents
@@ -184,7 +186,7 @@ adk_review_demo/
     │   ├── parameters.py     # a tree rule: a function takes these parameters
     │   ├── private_patch.py  # a test that patches a private name
     │   ├── required_paths.py # a tree rule: these files and folders exist
-    │   ├── reviewer_instructions.py # text that tries to instruct the reviewing model
+    │   ├── reviewer_instructions.py # a file rule: text that tries to instruct the reviewing model, read through format characters and across lines
     │   └── tests_offline.py  # a test that reaches the network
     ├── collect/              # driven adapters gathering evidence; may import core and rules
     │   ├── __init__.py
@@ -548,19 +550,34 @@ in the package root, importing `core/` loaded 187 ADK modules.
    budgets are `collect/git.py`'s, the radius's cut `judge/lanes.py`'s, and
    what was measured is in section 12.
 6. **Rules and profiles** (`core/rules.py`, `rules/`). A rule is one class
-   a file with `check(path, line)` over each added line; a profile in
-   `config.toml` is a named list of rule ids and built-in checks, `default`
-   running all. Nothing is read from the repository under review. The file
-   also holds the review policy and is read whole: a bad setting is exit 2.
-   A tree rule, `check(tree)`, reads the head instead: every path, and each
-   Python module, parsed once with the blast radius, for what must exist,
-   define a name, derive from a parent or take a parameter; its expectations
-   are its own constants.
+   a file, of three kinds with one mental model — a line, a file, the tree:
+   a `Rule`, `check(path, line)` over each added line; a `FileRule`,
+   `check(file)` over each changed file whole at the head, its lines, the
+   lines the change added and its module, for what one line cannot show; a
+   `TreeRule`, `check(tree)` over the head — every path, and each Python
+   module parsed once with the blast radius — for what must exist, define a
+   name, derive from a parent or take a parameter, naming the line where it
+   knows one. Its expectations are its own constants; `_template.py` is the
+   copy-ready shape, left aside by discovery, and `rules/README.md` the
+   guide; `lines_hit` and `self_check` are a rule's first tests,
+   `--list-rules` shows every check with its kind and its profiles, and
+   `--check ID` runs one check alone. A profile in `config.toml` is a named list of
+   check ids, or of the groups `rules` and `lanes`, `default` running all.
+   Nothing is read from the repository under review. The file also holds
+   the review policy and is read whole: a bad setting is exit 2.
 7. **What a review covers** (`review.py`, `collect/git.py`). `--path DIR`
    keeps a review to one folder; `--all` diffs every file against git's
    empty tree. With neither `--base` nor `--all`, a terminal asks and a
    pipeline uses `main`, or `master`. The lanes' diffs are capped at
    250,000 characters; a file past the cap is named under "not read".
+   `--dry-run` resolves what a review would cover and run — the revisions,
+   the files, the profile, the model and whether its arm is ready — and
+   runs nothing.
+8. **Fences with a nonce** (`judge/lanes.py`, `judge/verify.py`). Each
+   untrusted section a lane or a verifier reads sits between two marker
+   lines carrying a nonce drawn once a process, and the instruction ends
+   with a reminder after it; the content is never escaped, so a quote of it
+   still grounds. Section 12 says why not escapes.
 
 **Demo.**
 
@@ -1036,6 +1053,40 @@ review; a change that works on one arm is not finished.
   rule that asks for it by name, and a floor, said in the report, for a rule
   over the whole tree; a tree that could not be listed is a hole for every
   tree rule.
+- **A file rule, between the line and the tree.** Measured offline against
+  the one-line `reviewer-instructions` rule: a soft hyphen inside `ignore`,
+  full-width letters, a directive wrapped over two added lines and a
+  docstring declaring an override of the system each passed it, while its
+  five verb shapes fired. One line cannot show a wrapped sentence, and the
+  whole tree is the wrong scope for a change, so a third kind reads each
+  changed file whole at the head — its lines, the numbers of the lines the
+  change added and its module, the tree's parse where the head was listed —
+  and the rule became one: NFKC, every format character gone, the next two
+  lines read with an added one up to a blank line, one finding on the line
+  the shape starts. Probed over this repository's own files read as if
+  every line were added, it fires only on the phases' own lane instructions,
+  which tell a model to return no findings, and on test fixtures that hold
+  the words on purpose; on none of the docs, which discuss reviewers,
+  approvals and overrides throughout. The changed files' texts are read in
+  one batch beside the tree's and released after the gates with it. A tree rule may now name
+  a line, so its findings can be placed; a profile may name `rules` or
+  `lanes` for all of a kind, kept a group's name and never an id, and the
+  shipped `gates-only` stays an explicit list with its tripwire.
+- **Fences with a nonce, not escapes.** A sentence at the top of a lane's
+  instruction is no boundary: the sections after it are the branch's own
+  words, and a diff that ends in a heading and a rule of its own reads
+  exactly like the section the real one follows — a measurement on Copilot
+  gpt-4.1 with a reviewer of the same shape found a docstring declaring an
+  override silenced most of its lanes, each answering no findings at status
+  ok. Each untrusted section the lanes and the verifiers read now sits
+  between two marker lines carrying a nonce drawn once a process, which the
+  branch cannot know, and the instruction ends with a reminder after it,
+  the last thing read. The content is not escaped: a lane quotes the diff
+  verbatim and grounding holds the quote to the real lines, so escaping
+  runs of `>>>` — a doctest prompt, a conflict marker — would drop true
+  findings and change the report, where a boundary the branch cannot know
+  costs nothing. Whether the reminder turns a silenced lane into one that
+  reports the attempt on this reviewer's own prompts is not measured here.
 
 ---
 

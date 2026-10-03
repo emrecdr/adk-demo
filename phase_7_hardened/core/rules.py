@@ -1,18 +1,21 @@
 """A project's own rules, and the profiles that choose what a review runs.
 
-A rule is self-contained: one class that decides its own scope and its own verdict on each line a change added,
-and names its severity, its title and its fix. With no profile named, a review runs the default: every rule there
-is, built in or the project's own, so a new rule runs until a profile leaves it off. A profile only names which
-rules run, to narrow that. Rules live in the phase's own `rules/` folder, profiles in its `config.toml`, and
-nowhere else: the repository under review configures nothing, and no code of its runs. Pure, as the rest of the
-core is: a rule reads a line and answers yes or no, and `tokens` reads that line as Python does. A tree rule reads
-the head instead of the added lines: every path, and each Python module, parsed once with the blast radius, for
-what must exist, define a name, derive from a parent or take a parameter.
+A rule is self-contained: one class that decides its own scope and its own verdict, and names its severity, its
+title and its fix. Three kinds, one mental model — a line, a file, the tree. A `Rule` reads each line a change added
+and answers yes or no, `tokens` reading that line as Python does. A `FileRule` reads each file the change touched,
+whole at the head — its lines, which of them the change added and, for Python, its module — for what one line
+cannot show. A `TreeRule` reads the head instead of the change: every path, and each Python module, parsed once
+with the blast radius, for what must exist, define a name, derive from a parent or take a parameter. With no profile
+named, a review runs the default: every rule there is, built in or the project's own, so a new rule runs until a
+profile leaves it off. A profile only names which rules run, to narrow that, by id or by group. Rules live in the
+phase's own `rules/` folder, profiles in its `config.toml`, and nowhere else: the repository under review configures
+nothing, and no code of its runs. Pure, as the rest of the core is.
 """
 
 from __future__ import annotations
 
 import ast
+import functools
 import io
 import tokenize
 from abc import ABC, abstractmethod
@@ -40,8 +43,9 @@ class AnyRule(ABC):
 
     @abstractmethod
     def hits(self, files: list[dict], tree: Tree | None) -> list[tuple[str, int | None, str]]:
-        """Each `(path, line, text)` the rule finds: on an added line, numbered from git's own hunk headers, or over
-        the head, with no line. `UnreadError` where it could not look at what it asked for."""
+        """Each `(path, line, text)` the rule finds: on an added line, numbered from git's own hunk headers; in a
+        changed file, at the line it names; or over the head, at a line where the rule knows one and else at the
+        path. `UnreadError` where it could not look at what it asked for."""
 
 
 class Rule(AnyRule):
@@ -58,6 +62,58 @@ class Rule(AnyRule):
             for line, text in entry["added"]
             if self.check(entry["path"], text)
         ]
+
+
+class ChangedFile:
+    """One file a change touched, as a file rule reads it: its path, its text at the head as lines numbered from 1,
+    the numbers of the lines the change added and, for a Python file, its module — the tree's parse where the head
+    was listed, the file's own otherwise."""
+
+    def __init__(self, path: str, text: str, added: Iterable[int], module: ast.Module | None = None) -> None:
+        self.path = path
+        self.lines = tuple(text.splitlines())
+        self.added = frozenset(added)
+        self._module = module
+
+    def line(self, number: int) -> str:
+        """Line `number`, counted from 1 as git and the report count; empty past the end."""
+        return self.lines[number - 1] if 0 < number <= len(self.lines) else ""
+
+    @functools.cached_property
+    def module(self) -> ast.Module | str:
+        """The file as Python reads it, or why there is no module: not a Python file, or it does not parse."""
+        if self._module is not None:
+            return self._module
+        if not self.path.endswith(".py"):
+            return "not read as Python"
+        try:
+            return ast.parse("\n".join(self.lines))
+        except (SyntaxError, ValueError):
+            return "does not parse"
+
+
+class FileRule(AnyRule):
+    """One check over each file a change touched, read whole at the head: its lines, which of them the change added
+    and, for Python, its module — for what one added line cannot show: a sentence wrapped over several lines, a
+    decorator and its definition, a function a change grew past a length."""
+
+    @abstractmethod
+    def check(self, file: ChangedFile) -> list[tuple[int | None, str]]:
+        """Each `(line, what is wrong)` in `file`, the line numbered from 1 in the file at the head, None for the file
+        as a whole; empty where it holds."""
+
+    def hits(self, files: list[dict], tree: Tree | None) -> list[tuple[str, int | None, str]]:
+        found: list[tuple[str, int | None, str]] = []
+        for entry in files:
+            text = entry.get("text")
+            if text is None:
+                if why := entry.get("unread_text"):  # the head holds it and it was not read: a hole, never silence
+                    raise UnreadError(f"{entry['path']} {why}")
+                continue  # deleted, binary, a link, a submodule: nothing at the head for a file rule to read
+            module = tree.parsed.get(entry["path"]) if tree is not None else None
+            file = ChangedFile(entry["path"], text, (line for line, _text in entry["added"]), module)
+            found += [(entry["path"], line, what) for line, what in self.check(file)]
+        return found
 
 
 def findings_of(rules: Sequence[AnyRule], files: list[dict], tree: Tree | None) -> tuple[list[Finding], list[str]]:
@@ -87,28 +143,56 @@ def findings_of(rules: Sequence[AnyRule], files: list[dict], tree: Tree | None) 
     return found, failed
 
 
-def chosen(profiles: dict, name: str, known: Sequence[str]) -> tuple[str, list[str]]:
-    """The rule ids profile `name` turns on; `DEFAULT` is every one there is. Every profile is read first, and
-    anything among them that does not mean exactly one thing — a profile that is no list of known ids, an empty one, one
-    called `default`, an id two rules share — is refused, never guessed at."""
+def chosen(
+    profiles: dict, name: str, known: Sequence[str], groups: Mapping[str, Sequence[str]] | None = None
+) -> tuple[str, list[str]]:
+    """The check ids profile `name` turns on; `DEFAULT` is every one there is. A profile names a check by its id, or
+    a group of them by the group's name — `rules`, every rule in the folder; `lanes`, every lane — spelled out
+    here in the order the profile gives. Every profile is read first, and anything among them that does not mean
+    exactly one thing — a profile that is no list of known ids, one that turns nothing on, one called `default`, an
+    id two rules share, an id that is a group's name — is refused, never guessed at."""
+    groups = dict(groups or {})
     if twice := sorted({rule for rule in known if known.count(rule) > 1}):
         raise ValueError(f"two rules share the id {twice[0]!r}; a built-in check's id is taken too")
+    if taken := sorted(set(groups) & set(known)):
+        raise ValueError(f"{taken[0]!r} is a group's name, and no check may take it")
+    expanded: dict[str, list[str]] = {}
     for profile, ids in profiles.items():
         if profile == DEFAULT:
             raise ValueError(f"config.toml [profiles]: `{DEFAULT}` is every check, and no profile may take its name")
-        if not isinstance(ids, list):
-            raise ValueError(f"config.toml [profiles]: {profile!r} must be a list of rule ids")
-        if not ids:
-            raise ValueError(
-                f"profile {profile!r} turns no check on, and a review that looks at nothing approves anything"
-            )
-        if strangers := [rule for rule in ids if rule not in known]:
-            raise ValueError(f"profile {profile!r} names {strangers[0]!r}, which no rule is; known: {', '.join(known)}")
+        expanded[profile] = expand(ids, known, groups, f"profile {profile!r}")
     if name == DEFAULT:
         return DEFAULT, list(known)
     if name not in profiles:
         raise ValueError(f"no profile {name!r}; there are {', '.join([DEFAULT, *sorted(profiles)])}")
-    return name, list(profiles[name])
+    return name, expanded[name]
+
+
+def expand(ids: object, known: Sequence[str], groups: Mapping[str, Sequence[str]], what: str) -> list[str]:
+    """The check ids a list names — each an id among `known`, or a group's name standing for its ids — spelled out
+    once each in the order given. `what` is the list as a sentence refusing it names it: a profile, or the `--check`
+    flag; refused when it is no list, names something unknown, or turns nothing on."""
+    if not isinstance(ids, list):
+        raise ValueError(f"{what} must be a list of rule ids")
+    if strangers := [check for check in ids if check not in known and check not in groups]:
+        raise ValueError(
+            f"{what} names {strangers[0]!r}, which no rule or group is; known: {', '.join(known)}"
+            + (f"; groups: {', '.join(groups)}" if groups else "")
+        )
+    expanded = list(dict.fromkeys(check for named in ids for check in groups.get(named, [named])))
+    if not expanded:
+        raise ValueError(f"{what} turns no check on, and a review that looks at nothing approves anything")
+    return expanded
+
+
+def lines_hit(rule: Rule | FileRule, path: str, text: str) -> list[int]:
+    """The lines of `text`, numbered from 1, that `rule` finds with all of it added to `path`: how a rule's author
+    tries a rule on a file's worth of examples, and how `rules.self_check` reads a rule's own source."""
+    numbered = list(enumerate(text.splitlines(), 1))
+    if isinstance(rule, FileRule):
+        file = ChangedFile(path, text, (number for number, _line in numbered))
+        return sorted({line for line, _what in rule.check(file) if line is not None})
+    return [number for number, line in numbered if rule.check(path, line)]
 
 
 def tokens(line: str) -> list[tokenize.TokenInfo]:
@@ -204,10 +288,15 @@ class TreeRule(AnyRule):
     parameter. Its expectations are its own constants, as a line rule's are."""
 
     @abstractmethod
-    def check(self, tree: Tree) -> list[tuple[str, str]]:
-        """Each `(path, what is wrong)` the head breaks; empty where it holds."""
+    def check(self, tree: Tree) -> list[tuple[str, str] | tuple[str, int | None, str]]:
+        """Each `(path, what is wrong)` the head breaks — or `(path, line, what)` where the rule knows the line, as one
+        over a module's syntax tree does; empty where it holds."""
 
     def hits(self, files: list[dict], tree: Tree | None) -> list[tuple[str, int | None, str]]:  # noqa: ARG002 -- a tree rule reads no lines
         if tree is None:
             raise UnreadError("the tree at the head was not listed")
-        return [(path, None, what) for path, what in self.check(tree)]
+        found: list[tuple[str, int | None, str]] = []
+        for path, *rest in self.check(tree):
+            line, what = rest if len(rest) == 2 else (None, rest[0])
+            found.append((path, line, what))
+        return found

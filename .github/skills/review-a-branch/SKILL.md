@@ -6,8 +6,10 @@ description: Run this repository's own reviewer, phase 7, on a git repository an
 # Review a branch with phase 7
 
 The reviewer is a command: `python -m phase_7_hardened.review [repo] [--head B] [--base main | --all] [--path DIR]
-[--fail-on …] [--verify | --no-verify] [--max-tokens N] [--profile NAME]`. With no `repo` it reviews the demo
-repository that `scripts/make_demo_repo.py` builds in the temp folder.
+[--fail-on …] [--verify | --no-verify] [--max-tokens N] [--profile NAME | --check ID] [--dry-run] [--list-rules]`. With
+no `repo` it reviews the demo repository that `scripts/make_demo_repo.py` builds in the temp folder. `--dry-run`
+resolves what a run would cover — revisions, files, profile, model, readiness — and runs nothing: the cheapest way to
+catch the wrong branch; `--list-rules` shows every check with its kind and its profiles.
 
 1. Without a model, which needs no key and is safe anywhere:
    `uv run python -m phase_7_hardened.review <repo> --head <branch> --base main --profile gates-only`. The gates

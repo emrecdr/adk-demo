@@ -16,7 +16,7 @@ import os
 import re
 import shutil
 import subprocess
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -371,7 +371,7 @@ def files_at_head(resolved: dict, paths: Sequence[str]) -> list[str]:
     return texts
 
 
-def tree_at_head(resolved: dict) -> Tree | None:
+def tree_at_head(resolved: dict, listing: list[tuple[str, str, str, str, str]] | None = None) -> Tree | None:
     """The head's tree: every path, every Python file read and parsed once, and the Python files not read; None when
     the tree could not be listed.
 
@@ -379,32 +379,73 @@ def tree_at_head(resolved: dict) -> Tree | None:
     its cap or past the tree's costs nothing, and one batch reads the rest. A link is skipped uncounted: its target
     is read under its own name. A failed or timed-out listing is None, never an empty tree: measured with its exit
     code ignored, every changed file read as "a leaf". A batch past its timeout reads nothing, and every file it
-    was asked for is named unread; so is a blob a partial clone lacks, which git lists with no size.
+    was asked for is named unread; so is a blob a partial clone lacks, which git lists with no size. A `listing`
+    already taken is read instead of a second one.
     """
-    try:
-        listing = _listed(resolved)
-    except GitError:
-        return None
+    if listing is None:
+        try:
+            listing = _listed(resolved)
+        except GitError:
+            return None
     paths = [path for _mode, _kind, _sha, _size, path in listing]
+    python = (
+        (path, sha, size)
+        for mode, kind, sha, size, path in listing
+        if kind == "blob" and mode != "120000" and path.endswith(".py")
+    )
+    wanted, unread = _budgeted(python)
+    sources = _read(resolved, wanted)
+    return Tree(paths, sources, unread + [path for path, _ in wanted if path not in sources])
+
+
+def _budgeted(blobs: Iterable[tuple[str, str, str]]) -> tuple[list[tuple[str, str]], list[str]]:
+    """Which of the `(path, sha, size)` blobs to read, each within its cap and all within the tree's budget, in
+    order; and the paths left unread — one over its cap, past the budget, or sized "BAD", as a partial clone lists
+    a blob it lacks, which nothing fetches to size."""
     wanted: list[tuple[str, str]] = []
     unread: list[str] = []
     budget = MAX_TREE_BYTES
-    for mode, kind, sha, size_field, path in listing:
-        if kind != "blob" or mode == "120000" or not path.endswith(".py"):
-            continue
-        # A size of "BAD": a partial clone lacks the blob, and nothing is fetched to size it.
+    for path, sha, size_field in blobs:
         size = int(size_field) if size_field.isdigit() else None
         if size is None or size > min(MAX_FILE_BYTES, budget):
             unread.append(path)
         else:
             wanted.append((path, sha))
             budget -= size
+    return wanted, unread
+
+
+def _read(resolved: dict, wanted: list[tuple[str, str]]) -> dict[str, str]:
+    """The text of each `(path, sha)` wanted, by path, from one batch. A blob the batch did not give back, or a batch
+    that failed or timed out and so read nothing, leaves its path out, for the caller to name unread."""
     try:
-        texts = _blobs(resolved, [sha for _, sha in wanted]) if wanted else []
-    except GitError:  # the batch failed or timed out: it read nothing
+        texts = _blobs(resolved, [sha for _path, sha in wanted]) if wanted else []
+    except GitError:
         texts = [None] * len(wanted)
-    sources = {path: text for (path, _), text in zip(wanted, texts, strict=True) if text is not None}
-    return Tree(paths, sources, unread + [path for path, _ in wanted if path not in sources])
+    return {path: text for (path, _sha), text in zip(wanted, texts, strict=True) if text is not None}
+
+
+def read_texts(resolved: dict, files: list[dict], listing: list[tuple[str, str, str, str, str]] | None) -> None:
+    """Each changed file's text at the head, for the file rules, set on its entry as `text`: a plain file the head
+    holds within the caps, read in one batch. `unread_text` names one the head holds that was not read — over its
+    cap, past the tree's budget, a blob the batch did not give back, or a tree that could not be listed — a hole for
+    a rule that reads it. A file the head does not hold, a binary, a link or a submodule has neither: nothing for a
+    file rule to read, and the report names a binary under not read already."""
+    for entry in files:
+        entry["text"], entry["unread_text"] = None, None
+    if listing is None:
+        for entry in files:
+            entry["unread_text"] = "was not read: the head's tree could not be listed"
+        return
+    blobs = {path: (sha, size) for mode, kind, sha, size, path in listing if kind == "blob" and mode != "120000"}
+    changed = [entry for entry in files if entry["path"] in blobs and not _BINARY.search(entry["diff"])]
+    wanted, _over = _budgeted((entry["path"], *blobs[entry["path"]]) for entry in changed)
+    texts = _read(resolved, wanted)
+    for entry in changed:
+        if entry["path"] in texts:
+            entry["text"] = texts[entry["path"]]
+        else:
+            entry["unread_text"] = "was not read whole"
 
 
 def radius_of(tree: Tree | None, files: list[dict]) -> Blast:
@@ -495,8 +536,8 @@ def collect_evidence(repo: str, base: str | None, head: str, scope: Sequence[str
     """Everything the gates, the rules and the lanes read, gathered in plain Python before any model runs.
 
     `files` carries each changed file with its WHOLE diff and its numbered
-    added lines, for the gates, and the lines of its capped diff a lane may
-    quote, numbered too, for grounding; `diff` is the rendered block the lanes read —
+    added lines, for the gates, its text at the head, for the file rules, and the lines of its capped diff a lane
+    may quote, numbered too, for grounding; `diff` is the rendered block the lanes read —
     one `### <path>` heading and a fenced diff per file, in path order, each
     capped and the block too, what it leaves out counted at its end, each path
     flattened because a newline in one forged a heading —
@@ -551,7 +592,12 @@ def collect_evidence(repo: str, base: str | None, head: str, scope: Sequence[str
         return {"status": "error", "error_message": str(exc)}
     if not files:  # measured: a branch already merged, or a base equal to its head, approved a review of nothing
         return {"status": "error", "error_message": _nothing(head, base, scope if listed else ())}
-    tree = tree_at_head(resolved)
+    try:
+        listing = _listed(resolved)
+    except GitError:
+        listing = None
+    tree = tree_at_head(resolved, listing)
+    read_texts(resolved, files, listing)
     blast = radius_of(tree, files)
     return {
         "status": "success",

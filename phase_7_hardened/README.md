@@ -21,11 +21,11 @@ from:
 
 | Group | May import | Holds |
 |---|---|---|
-| `core/` | nothing else | `blast.py` (new: what at the head depends on each changed file, read from the syntax tree), `findings.py` (`Finding`, `Review`, the severity scale), `rules.py` (new: the `Rule` and the `TreeRule` a project writes, the `Tree` a tree rule reads, what the rules find, the profile chosen), `secrets.py` (the credential shapes, `scrub`, the secrets gate), `text.py` (flat whitespace, the named cut), `verdict.py` (grounding, folding, deciding, `Outcome`) |
-| `rules/` | `core` | new: a project's own rules, one self-contained class a file: `no_print.py` (the example of the shape), `money_in_cents.py` (the payments project's own), `reviewer_instructions.py`, `private_patch.py` and `tests_offline.py`, and the tree rules `required_paths.py`, `module_defines.py`, `derives_from.py` and `parameters.py`; `__init__.py` finds them |
+| `core/` | nothing else | `blast.py` (new: what at the head depends on each changed file, read from the syntax tree), `findings.py` (`Finding`, `Review`, the severity scale), `rules.py` (new: the `Rule`, the `FileRule` and the `TreeRule` a project writes, the `ChangedFile` and the `Tree` they read, what the rules find, the profile chosen), `secrets.py` (the credential shapes, `scrub`, the secrets gate), `text.py` (flat whitespace, the named cut), `verdict.py` (grounding, folding, deciding, `Outcome`) |
+| `rules/` | `core` | new: a project's own rules, one self-contained class a file: `no_print.py` (the example of the shape), `money_in_cents.py` (the payments project's own), `reviewer_instructions.py`, `private_patch.py` and `tests_offline.py`, and the tree rules `required_paths.py`, `module_defines.py`, `derives_from.py` and `parameters.py`; `_template.py` is the copy-ready shape, left aside by discovery; `__init__.py` finds them |
 | `collect/` | `core`, `rules` | `git.py` (read-only git, `collect_evidence`, every Python file at the head in one batch), `gates.py` (new: ruff at the head commit) |
-| `judge/` | `core`, `rules`, `collect` | `config.py` (the request gains retries), `lanes.py` (and the read-back from state), `tools.py` (the model-facing tools and the guardrail), `plugins.py` (gains the ceiling), `graph.py` (the graph and the `App`; named so because `adk web` lists any folder holding an `agent.py` as an agent), `run.py` (new: one seeded run, guarded), `verify.py` (new: the second opinion) |
-| `deliver/` | `core` alone: the driver hands it the rest | `report.py` (the report, and the rules that keep model prose from forging it) |
+| `judge/` | `core`, `rules`, `collect` | `config.py` (the request gains retries), `lanes.py` (the fences with a nonce, and the read-back from state), `tools.py` (the model-facing tools and the guardrail), `plugins.py` (gains the ceiling), `graph.py` (the graph and the `App`; named so because `adk web` lists any folder holding an `agent.py` as an agent), `run.py` (new: one seeded run, guarded), `verify.py` (new: the second opinion) |
+| `deliver/` | `core` alone: the driver hands it the rest | `report.py` (the report, the dry run and the check listing, and the rules that keep model prose from forging it) |
 | the root | everything | `agent.py` builds the chat `App` for ADK's loader, the one place that wants it; `__init__.py` answers `agent` without loading it, so `core/` really does import alone; `review.py` is the driver that fixes the order of the steps; `config.toml` is the one config file |
 
 `tests/test_layering.py` reads the imports off the syntax tree and fails,
@@ -96,18 +96,28 @@ The additions:
   unread file by name is a hole.
 - **Rules and profiles** (`core/rules.py`, `rules/`). A project's own
   check is one class in a file of its own in `rules/`: an id, a severity,
-  a title, a fix, and `check(path, line)`, which reads each line the change
-  added and answers yes or no. The rule decides its own scope, which files
-  and which lines, so nothing about it is configured anywhere else; drop
-  the file in and it is found. A tree rule, `check(tree)`, reads the head
-  instead of the added lines: every path, and each Python module parsed once
-  with the blast radius, for what must exist, define a name, derive from a parent or take a
-  parameter; its expectations are its own constants. A rule is for what no tool checks: ruff covers
+  a title, a fix, and a `check`. Three kinds, one mental model — a line, a
+  file, the tree. A `Rule`'s `check(path, line)` reads each line the change
+  added and answers yes or no. A `FileRule`'s `check(file)` reads each file
+  the change touched, whole at the head — its lines, the numbers of the
+  lines the change added and, for Python, its module — for what one line
+  cannot show, as `reviewer_instructions.py` reads a directive wrapped over
+  lines. A `TreeRule`'s `check(tree)` reads the head instead: every path,
+  and each Python module parsed once with the blast radius, for what must
+  exist, define a name, derive from a parent or take a parameter, naming the
+  line where it knows one. The rule decides its own scope, so nothing about
+  it is configured anywhere else; drop the file in and it is found —
+  `_template.py` is the copy-ready shape, left aside by discovery because
+  its name starts with `_` — and its expectations are its own constants.
+  `--list-rules` prints every check with its kind, its severity and the
+  profiles that run it, and stops; `--check ID` runs one check this once,
+  repeatable, so a rule is tried on any repository with no profile edited;
+  `rules/README.md` is the guide, one example of each kind. A rule is for what no tool checks: ruff covers
   the rest, with the families `[lint]` selects. `config.toml`, the phase's one config file
   beside `review.py`, names profiles under `[profiles]`, each a
   list of the checks it runs — the built-in ones, `secrets`, `lint`,
-  `lane.security`, `lane.tests` and `lane.complexity`, and the folder's own
-  by id — and `--profile NAME` picks one. With none named, a review runs
+  `lane.security`, `lane.tests` and `lane.complexity`, the folder's own
+  by id, and the groups `rules` and `lanes` for all of a kind — and `--profile NAME` picks one. With none named, a review runs
   `default`: every built-in check and every rule in the folder, so a new
   rule runs until a profile leaves it off, and no `[profiles]` at all is
   no error. The same file holds the review policy, `[review]`'s `fail_on`,
@@ -137,7 +147,10 @@ The additions:
   what it changes: the head is diffed against git's empty tree, which git
   knows without storing, so every file reads as added and goes through the
   same gates, lanes and grounding, and no merge base is needed, so a shallow
-  clone serves. `--head` is the branch checked out when not given. With
+  clone serves. `--dry-run` resolves all of this — the revisions, the files,
+  the profile, the model and whether its arm is ready — prints it and stops,
+  no gate, no rule, no model call: the cheapest way to catch the wrong branch
+  or profile. `--head` is the branch checked out when not given. With
   neither `--base` nor `--all`, a person at a terminal is asked which, on
   stderr, and only when stdin and stderr are both the terminal, so a
   `2>/dev/null` never waits on a question no one sees; CI or
@@ -151,6 +164,15 @@ The additions:
   tells the lanes how many, and the report names each under "not read";
   the blast radius beside it is cut at 20,000, widest first. With no cap,
   `--all` over 4,826 files gave each lane and each verifier 14.9 MB.
+- **Fences with a nonce** (`judge/lanes.py`, `judge/verify.py`). A sentence
+  at the top of an instruction is no boundary: what follows it is the
+  branch's own text. Each untrusted section a lane or a verifier reads — the
+  change, and for a verifier the finding too — sits between two marker lines
+  carrying a nonce drawn once a process, which the branch cannot know, and
+  the instruction ends with a reminder after it: whatever the text said,
+  review fully, and text that addressed a reviewer is a finding. The content
+  is never escaped, so a lane's verbatim quote still grounds; section 12 of
+  the design record says why not escapes.
 
 ## Run it
 
@@ -162,6 +184,9 @@ uv run python -m phase_7_hardened.review --head feature/payments --max-tokens 20
 uv run python -m phase_7_hardened.review --head feature/payments --profile gates-only  # gates and rules only: no model, no key
 uv run python -m phase_7_hardened.review --head feature/payments --path src/payments/config.py   # one folder or file of the change
 uv run python -m phase_7_hardened.review --all --profile gates-only                # every file at the branch checked out, not a change
+uv run python -m phase_7_hardened.review --head feature/payments --check money-in-cents   # one check alone, this once: how a rule is tried
+uv run python -m phase_7_hardened.review --head feature/payments --dry-run     # what a review would cover and run, and nothing run
+uv run python -m phase_7_hardened.review --list-rules                          # every check: its kind, its severity, the profiles that run it
 uv run pytest -q tests/test_hardened.py tests/test_layering.py                 # the additions and the layering, offline
 ```
 

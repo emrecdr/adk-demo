@@ -1,7 +1,7 @@
 """The command: evidence first, lanes judge, code decides — hardened, and grouped by dependency direction.
 
     uv run python -m phase_7_hardened.review [repo] [--head B] [--base main | --all] [--path DIR]
-        [--fail-on …] [--verify | --no-verify] [--max-tokens N] [--profile NAME]
+        [--fail-on …] [--verify | --no-verify] [--max-tokens N] [--profile NAME | --check ID] [--dry-run] [--list-rules]
 
 Phase 6's command, regrouped: `core/` is the domain and imports nothing that
 runs a process or calls a model, `rules/` holds a project's own checks,
@@ -26,9 +26,10 @@ regrouping, what advanced users ask for after a live run:
    file, read from the syntax tree, told to the lanes beside the diff and
    heading the report; the verdict never reads it.
 6. Rules and profiles (`core/rules.py`, `rules/`): a project's own rules, one
-   self-contained class a file, and named profiles of which checks run,
-   chosen with `--profile`. Every definition is read from this folder;
-   nothing is read from the repository under review.
+   self-contained class a file — over each added line, each changed file, or
+   the head — and named profiles of which checks run, chosen with
+   `--profile`; `--list-rules` shows them all. Every definition is read from
+   this folder; nothing is read from the repository under review.
 7. What a review covers: `--path` keeps it to the change under a folder,
    the rest counted and named; `--all` reviews every file at the head, not
    what it changes. With neither a base nor `--all`, a person at a terminal
@@ -58,9 +59,10 @@ from google.adk.runners import InMemoryRunner
 from .collect.gates import LINT, lint_findings
 from .collect.git import GitError, checked_out, collect_evidence, default_base, is_repository
 from .core.findings import RANK, Finding, Review
-from .core.rules import DEFAULT, RULES, AnyRule, chosen, findings_of
+from .core.rules import DEFAULT, RULES, AnyRule, FileRule, Rule, chosen, expand, findings_of
 from .core.secrets import GATE, gate_findings
 from .core.verdict import (
+    EXIT_CLEAN,
     EXIT_DEGRADED,
     EXIT_USAGE,
     Outcome,
@@ -71,10 +73,10 @@ from .core.verdict import (
     to_verify,
     where_quoted,
 )
-from .deliver.report import inert, one_line, render
+from .deliver.report import inert, one_line, render, render_checks, render_dry_run
 from .judge.config import require_ready, serving
 from .judge.graph import build_app
-from .judge.lanes import LANE_NAMES, for_the_lanes, read_back, state_key
+from .judge.lanes import LANE_NAMES, LANES, for_the_lanes, read_back, state_key
 from .judge.plugins import RedactSecretsPlugin, UsageLedger
 from .judge.run import Run, run_seeded
 from .judge.verify import VERIFIER, judge_findings
@@ -182,12 +184,70 @@ def build_parser(review: dict) -> argparse.ArgumentParser:
         help="ask a second model whether each lane finding that says more than a gate holds, refuted ones named "
         f"(config.toml: {'on' if review['verify'] else 'off'})",
     )
-    parser.add_argument(
+    which = parser.add_mutually_exclusive_group()
+    which.add_argument(
         "--profile",
         default=DEFAULT,
         help=f"the checks to run, as config.toml's [profiles] names them; {DEFAULT}, every check, when not given",
     )
+    which.add_argument(
+        "--check",
+        action="append",
+        default=[],
+        metavar="ID",
+        help="run only this check this once — a rule's id, secrets, lint, lane.<name>, or the groups rules and lanes; "
+        "repeat it for more than one. How a rule's author tries a rule on a repository, with no profile edited",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="resolve what would be reviewed — the revisions, the files, the profile, the model and whether it is "
+        "ready — print it and stop: no gate, no rule, no model call",
+    )
+    parser.add_argument(
+        "--list-rules",
+        action="store_true",
+        help="print every check — the gates, the lanes and the folder's rules — with its kind, its severity and the "
+        "profiles that run it, then stop: no repository, no model, no key",
+    )
     return parser
+
+
+def checks_table(profiles: dict, rules: Sequence[AnyRule], known: Sequence[str], groups: dict) -> list[tuple]:
+    """`--list-rules`: every check a profile may name, one row each — its id, its kind, the severity its findings
+    carry, the profiles that run it, what it looks for and where it is defined."""
+    runs = {profile: chosen(profiles, profile, known, groups)[1] for profile in profiles}
+
+    def where(check: str) -> str:
+        return ", ".join([DEFAULT, *(profile for profile, ids in runs.items() if check in ids)])
+
+    rows: list[tuple] = [
+        (
+            "secrets",
+            "gate",
+            "blocker",
+            where("secrets"),
+            "a credential-shaped value in an added line",
+            "core/secrets.py",
+        ),
+        (
+            "lint",
+            "gate",
+            "ruff's, by code",
+            where("lint"),
+            "ruff over the changed Python files at the head",
+            "collect/gates.py",
+        ),
+        *(
+            (f"lane.{name}", "lane", "the lane's, by finding", where(f"lane.{name}"), role, "judge/lanes.py")
+            for name, role, _budget in LANES
+        ),
+    ]
+    for rule in rules:
+        kind = "line" if isinstance(rule, Rule) else "file" if isinstance(rule, FileRule) else "tree"
+        module = type(rule).__module__.rsplit(".", 1)[-1]
+        rows.append((rule.id, f"{kind} rule", rule.severity, where(rule.id), rule.title, f"rules/{module}.py"))
+    return rows
 
 
 def scope_of(folders: Sequence[str]) -> tuple[str, ...]:
@@ -270,6 +330,12 @@ def _sourced(source: str, findings: list[Finding]) -> list[Sourced]:
     return [Sourced(source, f, None if f.line is None else (f.line, f.line)) for f in findings]
 
 
+def not_read(files: list[dict], lanes: Collection[str]) -> dict[str, str]:
+    """What no one could read, by path with why. A cut is the lanes' limit: with none on, the gates and the rules
+    read every added line, and only what no one can read — binary, a submodule, nothing shown — is a hole."""
+    return {f["path"]: f["unread"] for f in files if f["unread"] and (lanes or not f["cut"])}
+
+
 def postprocess(run: Run, files: list[dict], lanes: tuple[str, ...], holes: dict[str, str]) -> Outcome:
     """The lanes' answers read back and grounded, each narrowing counted: what a model said that the diff bears out.
     `holes` are the checks that could not look before any model ran, named beside the lanes that could not.
@@ -279,10 +345,7 @@ def postprocess(run: Run, files: list[dict], lanes: tuple[str, ...], holes: dict
     redaction plugin refused it — or, failing that, what escaped the engine,
     which names every lane that wrote nothing.
     """
-    # A cut is the lanes' limit: with none on, the gates and the rules read every added line, and only what no one
-    # can read — binary, a submodule, nothing shown — is a hole.
-    unread = {f["path"]: f["unread"] for f in files if f["unread"] and (lanes or not f["cut"])}
-    outcome = Outcome(unread=unread, errors=dict(holes))
+    outcome = Outcome(unread=not_read(files, lanes), errors=dict(holes))
     quotable = {f["path"]: f["quotable"] for f in files}
     for key in map(state_key, lanes):  # a lane the profile left off did not fail: it was never asked
         review = read_back(run.state, key, Review, run.why(key, "the lane produced no output"))
@@ -344,16 +407,27 @@ def _review(argv: list[str] | None = None) -> int:
         args = build_parser(config["review"]).parse_args(argv)
         rules = discover()
         known = (*BUILT_IN, *(rule.id for rule in rules))
-        profile, on = chosen(config["profiles"], args.profile, known)
+        # The two groups a profile may name instead of ids: every rule in the folder, every lane.
+        groups = {
+            "rules": [rule.id for rule in rules],
+            "lanes": [check for check in BUILT_IN if check.startswith("lane.")],
+        }
+        profile, on = chosen(config["profiles"], args.profile, known, groups)
+        if args.check:  # one run's own list, held to what a profile is, and named in the report as the flag
+            profile, on = "--check " + " ".join(args.check), expand(args.check, known, groups, "--check")
         scope = scope_of(args.path)
     except ValueError as exc:
         _say(str(exc))
         return EXIT_USAGE
+    if args.list_rules:
+        print(render_checks(checks_table(config["profiles"], rules, known, groups)))
+        return EXIT_CLEAN
     ran = {BUILT_IN.get(check, RULES) for check in on}  # the source each check that runs files its findings under
     lanes = tuple(name for name in LANE_NAMES if state_key(name) in ran)
     # Only a lane calls a model: a profile without one needs no key, and the verifier has no lane finding to judge.
     verify = args.verify and bool(lanes)
-    if lanes and (why := require_ready(roles=(VERIFIER,) if verify else ())) is not None:
+    why = require_ready(roles=(VERIFIER,) if verify else ()) if lanes else None
+    if why is not None and not args.dry_run:  # a dry run reports an arm that is not ready; a review stops at it
         _say(why)
         return EXIT_USAGE
     try:
@@ -366,9 +440,26 @@ def _review(argv: list[str] | None = None) -> int:
         _say(evidence["error_message"])
         return EXIT_USAGE
     files = evidence["files"]
+    off = [check for check in known if check not in on]
+    if args.dry_run:
+        print(
+            render_dry_run(
+                evidence,
+                model=serving() if lanes else "",
+                profile=profile,
+                on=on,
+                off=off,
+                lanes=lanes,
+                ready=why or "ready",
+                unread=not_read(files, lanes),
+            )
+        )
+        return EXIT_CLEAN
     lint = config["lint"]
     gates, holes = run_checks(evidence, [rule for rule in rules if rule.id in on], ran, lint["rules"], lint["ignore"])
     del evidence["tree"]  # read by the gates; not held through the model calls
+    for entry in files:  # nor the changed files' texts, read by the file rules
+        entry["text"] = None
 
     app = build_app(chat=False, ceiling=args.max_tokens or None, lanes=lanes)  # 0 is no ceiling
     redactor = next(p for p in app.plugins if isinstance(p, RedactSecretsPlugin))
@@ -393,7 +484,7 @@ def _review(argv: list[str] | None = None) -> int:
             fail_on=args.fail_on,
             model=serving() if lanes else "",  # no lane, no model to name
             profile=profile,
-            off=[check for check in known if check not in on],
+            off=off,
             sources=[source for source in SOURCES if source in ran],
         )
     )

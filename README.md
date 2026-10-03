@@ -190,8 +190,8 @@ uv run python -m phase_6_reviewer.review /path/to/any/repo --base main --head my
 ```
 
 Phase 7 is the same command with `--verify`, `--max-tokens N`,
-`--profile NAME`, `--path DIR` and `--all` added, and `--head` the branch
-checked out when not named; its README shows a run of each. With neither
+`--profile NAME`, `--check ID`, `--path DIR`, `--all`, `--dry-run` and `--list-rules` added, and `--head`
+the branch checked out when not named; its README shows a run of each. With neither
 `--base` nor `--all`, a person at a terminal is asked which, and a
 pipeline reviews the change against `main`, or `master`. A pipeline checks
 out a detached commit, and one commit deep unless told otherwise (GitHub

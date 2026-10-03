@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from ..core.blast import Blast, describe
 from ..core.findings import Finding
@@ -82,6 +82,21 @@ def _blast(blast: Blast) -> list[str]:
     return [*lines, ""]
 
 
+def render_checks(rows: list[tuple[str, str, str, str, str, str]]) -> str:
+    """`--list-rules`: every check a profile may name, as a table — its id, its kind, the severity its findings
+    carry, the profiles that run it, what it looks for and where it is defined."""
+    lines = ["| id | kind | severity | profiles | what | where |", "|---|---|---|---|---|---|"]
+    for check, kind, severity, profiles, what, where in rows:
+        cells = [code_span(one_line(check)), kind, severity, profiles, one_line(what), code_span(where)]
+        lines.append("| " + " | ".join(cells) + " |")
+    lines += [
+        "",
+        "To write one: copy rules/_template.py under a new name; rules/README.md says how, and --check ID runs one "
+        "check alone.",
+    ]
+    return "\n".join(lines)
+
+
 def _as_resolved(name: str, ref: str) -> str:
     """A name as given, and the tag it resolved through when it is one: a fork's tag `origin/main`, with no such
     branch fetched, once stood in for the branch unseen."""
@@ -91,6 +106,63 @@ def _as_resolved(name: str, ref: str) -> str:
 def _where(f: Finding) -> str:
     """A finding's file and line as one line: the path is the branch's text."""
     return one_line(f"{f.file}:{f.line}" if f.line else f.file)
+
+
+def what(evidence: dict) -> str:
+    """What was reviewed, for a title: the branch against its base, or every file at the head."""
+    pre = evidence["preflight"]
+    return f"every file at {pre['head']}" if evidence["whole"] else f"{pre['head']} against {pre['base']}"
+
+
+def header(evidence: dict, *, model: str, profile: str, off: Sequence[str], unread: Mapping[str, str]) -> list[str]:
+    """The lines a review opens with, a dry run too: the repository and the revisions, the model and the profile
+    that serve it, what it covers, and what no one could read."""
+    pre, files, scope = evidence["preflight"], evidence["files"], evidence["scope"]
+    if evidence["whole"]:  # no base: every file at the head, each read as added
+        against, listed, kind = ["- against      nothing: every file, as if added"], "files", "file(s)"
+    else:
+        against = [
+            f"- against      {_as_resolved(pre['base'], pre.get('base_ref', ''))} @ {pre['base_sha'][:9]}",
+            f"- merge-base   {pre['merge_base'][:9]}",
+        ]
+        listed, kind = "changed", "changed file(s)"
+    left = f"{evidence['outside']} {kind} outside it, not reviewed"
+    return [
+        f"- repository   {pre['repo']}",
+        f"- branch       {_as_resolved(pre['head'], pre.get('head_ref', ''))} @ {pre['head_sha'][:9]}",
+        *against,
+        *([f"- model        {model}"] if model else []),
+        f"- profile      {profile}" + (f" (off: {', '.join(off)})" if off else ""),
+        *([f"- scope        {one_line(', '.join(scope))}: {left}"] if scope else []),
+        f"- {listed:<12} {len(files)} file(s): " + ", ".join(code_span(one_line(f["path"])) for f in files),
+        *(f"- not read     {code_span(one_line(path))}: {why}" for path, why in unread.items()),
+    ]
+
+
+def render_dry_run(
+    evidence: dict,
+    *,
+    model: str,
+    profile: str,
+    on: Sequence[str],
+    off: Sequence[str],
+    lanes: Sequence[str],
+    ready: str,
+    unread: Mapping[str, str],
+) -> str:
+    """`--dry-run`: what a review would cover and run, resolved as the review resolves it, and nothing run — the
+    cheapest way to find the wrong branch, the wrong profile, or a key that is not there before any of it costs."""
+    lines = [
+        f"# Dry run: {what(evidence)}",
+        "",
+        *header(evidence, model=model, profile=profile, off=off, unread=unread),
+        f"- checks       {', '.join(on)}",
+        *([f"- lanes        {', '.join(lanes)}: {ready}"] if lanes else []),
+        "",
+        *_blast(evidence["blast"]),
+        "Nothing ran: no gate, no rule, no model call. Drop --dry-run to review.",
+    ]
+    return "\n".join(lines)
 
 
 def render(
@@ -108,29 +180,10 @@ def render(
     """`evidence` is `collect_evidence`'s; `profile` is the profile that ran and `off` what it left off, named so a
     reader sees what was never asked; `sources` are the checks that ran, in report order, each a section whether it
     found anything or not."""
-    pre, files, scope = evidence["preflight"], evidence["files"], evidence["scope"]
-    if evidence["whole"]:  # no base: every file at the head, each read as added
-        title, against = f"# Review: every file at {pre['head']}", ["- against      nothing: every file, as if added"]
-        listed, kind = "files", "file(s)"
-    else:
-        title = f"# Review: {pre['head']} against {pre['base']}"
-        against = [
-            f"- against      {_as_resolved(pre['base'], pre.get('base_ref', ''))} @ {pre['base_sha'][:9]}",
-            f"- merge-base   {pre['merge_base'][:9]}",
-        ]
-        listed, kind = "changed", "changed file(s)"
-    left = f"{evidence['outside']} {kind} outside it, not reviewed"
     lines = [
-        title,
+        f"# Review: {what(evidence)}",
         "",
-        f"- repository   {pre['repo']}",
-        f"- branch       {_as_resolved(pre['head'], pre.get('head_ref', ''))} @ {pre['head_sha'][:9]}",
-        *against,
-        *([f"- model        {model}"] if model else []),
-        f"- profile      {profile}" + (f" (off: {', '.join(off)})" if off else ""),
-        *([f"- scope        {one_line(', '.join(scope))}: {left}"] if scope else []),
-        f"- {listed:<12} {len(files)} file(s): " + ", ".join(code_span(one_line(f["path"])) for f in files),
-        *(f"- not read     {code_span(one_line(path))}: {why}" for path, why in outcome.unread.items()),
+        *header(evidence, model=model, profile=profile, off=off, unread=outcome.unread),
         "",
         *_blast(evidence["blast"]),
         f"## Verdict: {verdict}",

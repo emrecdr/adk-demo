@@ -53,7 +53,12 @@ def test_the_maps_tree_draws_every_file_in_the_working_tree_and_nothing_else() -
 #: The guides a reader or an assistant follows, held to the paths they name. The phase READMEs name other
 #: repositories' paths too — the demo's `src/payments/charge.py`, a hostile branch's `X.py/y.py`, git's `refs/` — so
 #: they are not among them.
-GUIDES = [ROOT / "CLAUDE.md", ROOT / "README.md", *sorted((ROOT / ".github").rglob("*.md"))]
+GUIDES = [
+    ROOT / "CLAUDE.md",
+    ROOT / "README.md",
+    ROOT / "phase_7_hardened/rules/README.md",
+    *sorted((ROOT / ".github").rglob("*.md")),
+]
 #: A backticked path with a folder in it: a file by the dot in its name, a folder by its trailing slash.
 _PATH = re.compile(r"`((?:[\w.-]+/)+(?:[\w-]+\.[\w.]+)?)`")
 #: The one path a guide names that no checkout holds: `adk web`'s session store, written when it runs.
