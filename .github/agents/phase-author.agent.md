@@ -10,6 +10,7 @@ changing a phase, read its section of `docs/ITERATION_MAP.md` and the phase's ow
 1. Find the phase that owns the change — the one that introduced the file (a carried fix) or the one whose lesson it
    is (a change that stays there) — and say which, and why, before editing.
 2. Make the change there, then carry it with the `carry-forward` skill and bring the docs along with the `docs-tree`
-   skill; a new rule for the reviewer follows the `new-rule` skill.
+   skill; a new rule for the reviewer follows the `new-rule` skill, a new lane `new-lane`, and a run of the reviewer
+   on a branch `review-a-branch`.
 3. Finish as the instructions say: the lint and the suite green, their real results reported, failures included; no
    provider called and no `.env` read unless the task says so.

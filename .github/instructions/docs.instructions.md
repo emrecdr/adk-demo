@@ -23,4 +23,8 @@ applyTo: "**/*.md"
   long the suite takes, how many flags or example runs. Plain prose that says why, kept short; every claim about
   the code must be true of the code as it is.
 - `README.md` is how to run the demo; `CLAUDE.md` and `.github/copilot-instructions.md` are the assistants' guides
-  and say the same things: a rule that changes in one changes in the other.
+  and say the same things: a rule that changes in one changes in the other; `phase_7_hardened/rules/README.md` is
+  the guide a rule's author reads. Every guide — these four and every Markdown file under `.github/` — names only
+  paths the working tree has: a backticked path with a folder in it that no checkout holds fails `tests/test_docs.py`
+  (`.adk/session.db`, written when `adk web` runs, is the one exception). Rename or remove a file, and the guides
+  that name it change in the same change.

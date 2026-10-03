@@ -5,10 +5,11 @@ small git-branch code reviewer in seven phase folders, one layer a phase: 1 a ba
 3 more tools, `ToolContext.state` and a `before_tool_callback` guardrail → 4 a `Workflow` (collector → reviewer with
 `output_schema`) and a CLI → 5 fan-out to three lanes, `JoinNode`, a verdict agent → 6 evidence gathered in Python,
 lanes only judge, code decides the verdict, `App` with plugins → 7 phase 6 regrouped by dependency direction plus
-retries, a token ceiling, a ruff gate, `--verify`, each file's blast radius and a project's own rules. `CLAUDE.md` at
-the root is the long form of these instructions and `docs/ITERATION_MAP.md` the design record (§12 logs every decision
-measured live); read the relevant section before changing a phase. Path-specific rules sit in `.github/instructions/`,
-the recurring tasks in `.github/skills/`.
+retries, a token ceiling, a ruff gate, `--verify`, each file's blast radius, fences with a nonce around all the lanes
+read, a project's own rules of three kinds (a line, a file, the tree) chosen by profile, and what a review covers
+(`--path`, `--all`, `--dry-run`). `CLAUDE.md` at the root is the long form of these instructions and
+`docs/ITERATION_MAP.md` the design record (§12 logs every decision measured live); read the relevant section before
+changing a phase. Path-specific rules sit in `.github/instructions/`, the recurring tasks in `.github/skills/`.
 
 ## The talk
 
@@ -27,8 +28,11 @@ presenter, not made here.
 - `uv run pytest -q tests/test_docs.py` after adding, removing or renaming any file; `-k phase_6` for one phase.
 - `uv run python scripts/make_demo_repo.py` builds the demo repository the reviewer reviews (`--fix` commits its two
   fixes); `uv run python -m phase_7_hardened.review --head feature/payments --base main --profile gates-only` reviews
-  it with no model call. Every other review command, `scripts/ask.py`, `scripts/rehearse.py` and `scripts/measure.py`
-  call a provider: run them only when the task says so.
+  it with no model call, as do `--check ID` (one check alone), `--dry-run` (what a review would cover and run, nothing
+  run) and `--list-rules`; `uv run python scripts/rehearse.py --dry-run` prints every phase's demo line and runs
+  nothing. Every other review command, `uv run adk web .`, `uv run adk run <phase>`, `scripts/ask.py`,
+  `scripts/rehearse.py` without `--dry-run` and `scripts/measure.py` call a provider: run them only when the task says
+  so.
 
 ## Rules the tests enforce
 
@@ -74,5 +78,6 @@ by its commit SHA.
 
 Flag a change that breaks a rule above or in `.github/instructions/`, naming the rule and the test that would catch
 it — `tests/test_docs.py` for the README claims and the map's tree, `tests/test_layering.py` for phase 7's imports,
-`tests/test_portability.py` for `encoding=` and `/tmp/` — and look first for the commonest miss: a file changed in one
-phase and not carried forward, or carried where it was that phase's lesson.
+`tests/test_portability.py` for `encoding=` and `/tmp/`, `tests/test_copilot.py` for the files under `.github/` — and
+look first for the commonest miss: a file changed in one phase and not carried forward, or carried where it was that
+phase's lesson.

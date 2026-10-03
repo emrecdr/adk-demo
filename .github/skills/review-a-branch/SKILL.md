@@ -21,8 +21,9 @@ catch the wrong branch; `--list-rules` shows every check with its kind and its p
    the report names the arm and the model that ran.
 3. Read the exit code: 0 approved; 1 a finding at or above `--fail-on` (`blocker` by default); 2 a usage error
    before any model call, such as a branch that adds nothing, an arm that is not ready, or a `config.toml` or
-   profile that cannot run; 3 a hole — a gate, lane or rule failed, a tree rule could not look, or a changed file no
-   lane read whole — which must never be read as "nothing found".
+   profile that cannot run; 3 a hole — a gate, lane or rule failed, a rule could not look (the head's tree not
+   listed, or a file it holds not read whole), a changed file no lane read whole, or a finding at the bar whose quote
+   the diff does not bear out — which must never be read as "nothing found".
 4. The report lists findings by source (`gate_secrets`, `gate_rules`, `gate_lint`, then the lanes), the blast
    radius of each changed file, what was not read, and what the run cost. Quote its lines when you report, rather
    than paraphrasing them.
