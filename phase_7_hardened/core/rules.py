@@ -40,6 +40,9 @@ class AnyRule(ABC):
     severity: ClassVar[Severity]
     title: ClassVar[str]
     fix: ClassVar[str]
+    #: What the rule reads, as `--list-rules` names it: a line, a file, the tree. Each kind below sets its own; a
+    #: rule of its own shape, with its own `hits`, is custom.
+    kind: ClassVar[str] = "custom"
 
     @abstractmethod
     def hits(self, files: list[dict], tree: Tree | None) -> list[tuple[str, int | None, str]]:
@@ -50,6 +53,8 @@ class AnyRule(ABC):
 
 class Rule(AnyRule):
     """One check over the lines a change added: it decides its own scope, and its own verdict on a line."""
+
+    kind = "line"
 
     @abstractmethod
     def check(self, path: str, line: str) -> bool:
@@ -96,6 +101,8 @@ class FileRule(AnyRule):
     """One check over each file a change touched, read whole at the head: its lines, which of them the change added
     and, for Python, its module — for what one added line cannot show: a sentence wrapped over several lines, a
     decorator and its definition, a function a change grew past a length."""
+
+    kind = "file"
 
     @abstractmethod
     def check(self, file: ChangedFile) -> list[tuple[int | None, str]]:
@@ -286,6 +293,8 @@ def parameters(module: ast.Module, function: str) -> list[str] | None:
 class TreeRule(AnyRule):
     """One check over the tree at the head: what must exist, define a name, derive from a parent or take a
     parameter. Its expectations are its own constants, as a line rule's are."""
+
+    kind = "tree"
 
     @abstractmethod
     def check(self, tree: Tree) -> list[tuple[str, str] | tuple[str, int | None, str]]:

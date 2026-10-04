@@ -388,14 +388,14 @@ def tree_at_head(resolved: dict, listing: list[tuple[str, str, str, str, str]] |
         except GitError:
             return None
     paths = [path for _mode, _kind, _sha, _size, path in listing]
-    python = (
-        (path, sha, size)
-        for mode, kind, sha, size, path in listing
-        if kind == "blob" and mode != "120000" and path.endswith(".py")
-    )
-    wanted, unread = _budgeted(python)
-    sources = _read(resolved, wanted)
-    return Tree(paths, sources, unread + [path for path, _ in wanted if path not in sources])
+    python = ((path, sha, size) for path, sha, size in _plain(listing) if path.endswith(".py"))
+    return Tree(paths, *_texts(resolved, python))
+
+
+def _plain(listing: list[tuple[str, str, str, str, str]]) -> Iterator[tuple[str, str, str]]:
+    """Each plain file of the listing as `(path, sha, size)`: a blob and no link, whose text is its own. A link's
+    target is read under its own name, and a submodule's commits are another repository's."""
+    return ((path, sha, size) for mode, kind, sha, size, path in listing if kind == "blob" and mode != "120000")
 
 
 def _budgeted(blobs: Iterable[tuple[str, str, str]]) -> tuple[list[tuple[str, str]], list[str]]:
@@ -415,14 +415,17 @@ def _budgeted(blobs: Iterable[tuple[str, str, str]]) -> tuple[list[tuple[str, st
     return wanted, unread
 
 
-def _read(resolved: dict, wanted: list[tuple[str, str]]) -> dict[str, str]:
-    """The text of each `(path, sha)` wanted, by path, from one batch. A blob the batch did not give back, or a batch
-    that failed or timed out and so read nothing, leaves its path out, for the caller to name unread."""
+def _texts(resolved: dict, blobs: Iterable[tuple[str, str, str]]) -> tuple[dict[str, str], list[str]]:
+    """The text of each `(path, sha, size)` blob within the caps, by path, from one batch; and the paths not read —
+    over a cap or past the tree's budget, not given back by the batch, or read by no batch at all, one that failed
+    or timed out — for the caller to name unread."""
+    wanted, unread = _budgeted(blobs)
     try:
         texts = _blobs(resolved, [sha for _path, sha in wanted]) if wanted else []
     except GitError:
         texts = [None] * len(wanted)
-    return {path: text for (path, _sha), text in zip(wanted, texts, strict=True) if text is not None}
+    read = {path: text for (path, _sha), text in zip(wanted, texts, strict=True) if text is not None}
+    return read, unread + [path for path, _sha in wanted if path not in read]
 
 
 def read_texts(resolved: dict, files: list[dict], listing: list[tuple[str, str, str, str, str]] | None) -> None:
@@ -437,14 +440,12 @@ def read_texts(resolved: dict, files: list[dict], listing: list[tuple[str, str, 
         for entry in files:
             entry["unread_text"] = "was not read: the head's tree could not be listed"
         return
-    blobs = {path: (sha, size) for mode, kind, sha, size, path in listing if kind == "blob" and mode != "120000"}
+    blobs = {path: (sha, size) for path, sha, size in _plain(listing)}
     changed = [entry for entry in files if entry["path"] in blobs and not _BINARY.search(entry["diff"])]
-    wanted, _over = _budgeted((entry["path"], *blobs[entry["path"]]) for entry in changed)
-    texts = _read(resolved, wanted)
+    texts, _unread = _texts(resolved, ((entry["path"], *blobs[entry["path"]]) for entry in changed))
     for entry in changed:
-        if entry["path"] in texts:
-            entry["text"] = texts[entry["path"]]
-        else:
+        entry["text"] = texts.get(entry["path"])
+        if entry["text"] is None:
             entry["unread_text"] = "was not read whole"
 
 

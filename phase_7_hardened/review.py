@@ -59,7 +59,7 @@ from google.adk.runners import InMemoryRunner
 from .collect.gates import LINT, lint_findings
 from .collect.git import GitError, checked_out, collect_evidence, default_base, is_repository
 from .core.findings import RANK, Finding, Review
-from .core.rules import DEFAULT, RULES, AnyRule, FileRule, Rule, chosen, expand, findings_of
+from .core.rules import DEFAULT, RULES, AnyRule, chosen, expand, findings_of
 from .core.secrets import GATE, gate_findings
 from .core.verdict import (
     EXIT_CLEAN,
@@ -86,11 +86,20 @@ ROOT = Path(__file__).resolve().parents[1]
 #: The repository `scripts/make_demo_repo.py` builds, spelled as it spells it — a copy, because a phase folder
 #: runs alone — so the command needs no path on stage.
 DEMO_REPO = Path(tempfile.gettempdir()) / "adk-demo-repo"
+
+
+def lane_check(name: str) -> str:
+    """The id a profile turns one lane on with: the one place `lane.` is spelled."""
+    return f"lane.{name}"
+
+
+#: Each lane's check id and its state key, the source its findings carry.
+LANE_CHECKS = {lane_check(name): state_key(name) for name in LANE_NAMES}
 #: The checks built in, by the id a profile turns each on with, and the source their findings carry; the project's
 #: own rules carry `RULES`. Beside the report's order, so a check added to one is seen missing from the other.
-BUILT_IN = {"secrets": GATE, "lint": LINT, **{f"lane.{name}": state_key(name) for name in LANE_NAMES}}
+BUILT_IN = {"secrets": GATE, "lint": LINT, **LANE_CHECKS}
 #: Report order, and the fold's on a tie: secrets, the project's own rules, lint, then the lanes in table order.
-SOURCES = (GATE, RULES, LINT, *(state_key(name) for name in LANE_NAMES))
+SOURCES = (GATE, RULES, LINT, *LANE_CHECKS.values())
 #: Phase 7's one config file: the review policy, ruff's rule set and the profiles, beside this driver.
 CONFIG = Path(__file__).with_name("config.toml")
 
@@ -216,7 +225,7 @@ def build_parser(review: dict) -> argparse.ArgumentParser:
 def checks_table(profiles: dict, rules: Sequence[AnyRule], known: Sequence[str], groups: dict) -> list[tuple]:
     """`--list-rules`: every check a profile may name, one row each — its id, its kind, the severity its findings
     carry, the profiles that run it, what it looks for and where it is defined."""
-    runs = {profile: chosen(profiles, profile, known, groups)[1] for profile in profiles}
+    runs = {profile: expand(ids, known, groups, f"profile {profile!r}") for profile, ids in profiles.items()}
 
     def where(check: str) -> str:
         return ", ".join([DEFAULT, *(profile for profile, ids in runs.items() if check in ids)])
@@ -239,14 +248,13 @@ def checks_table(profiles: dict, rules: Sequence[AnyRule], known: Sequence[str],
             "collect/gates.py",
         ),
         *(
-            (f"lane.{name}", "lane", "the lane's, by finding", where(f"lane.{name}"), role, "judge/lanes.py")
+            (lane_check(name), "lane", "the lane's, by finding", where(lane_check(name)), role, "judge/lanes.py")
             for name, role, _budget in LANES
         ),
     ]
     for rule in rules:
-        kind = "line" if isinstance(rule, Rule) else "file" if isinstance(rule, FileRule) else "tree"
         module = type(rule).__module__.rsplit(".", 1)[-1]
-        rows.append((rule.id, f"{kind} rule", rule.severity, where(rule.id), rule.title, f"rules/{module}.py"))
+        rows.append((rule.id, f"{rule.kind} rule", rule.severity, where(rule.id), rule.title, f"rules/{module}.py"))
     return rows
 
 
@@ -410,7 +418,7 @@ def _review(argv: list[str] | None = None) -> int:
         # The two groups a profile may name instead of ids: every rule in the folder, every lane.
         groups = {
             "rules": [rule.id for rule in rules],
-            "lanes": [check for check in BUILT_IN if check.startswith("lane.")],
+            "lanes": list(LANE_CHECKS),
         }
         profile, on = chosen(config["profiles"], args.profile, known, groups)
         if args.check:  # one run's own list, held to what a profile is, and named in the report as the flag
@@ -423,7 +431,7 @@ def _review(argv: list[str] | None = None) -> int:
         print(render_checks(checks_table(config["profiles"], rules, known, groups)))
         return EXIT_CLEAN
     ran = {BUILT_IN.get(check, RULES) for check in on}  # the source each check that runs files its findings under
-    lanes = tuple(name for name in LANE_NAMES if state_key(name) in ran)
+    lanes = tuple(name for name in LANE_NAMES if lane_check(name) in on)
     # Only a lane calls a model: a profile without one needs no key, and the verifier has no lane finding to judge.
     verify = args.verify and bool(lanes)
     why = require_ready(roles=(VERIFIER,) if verify else ()) if lanes else None

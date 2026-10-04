@@ -52,9 +52,10 @@ The additions:
   its request over four, plus room for an answer — and refuses the call that
   would pass the ceiling, through the same plugin hook the redaction plugin
   uses. The refused lane is named, everything found is reported, exit 3.
-- **A second gate: ruff** (`collect/gates.py`). The changed Python files are
-  read from the head commit in one batch, as the blast radius reads the
-  tree, written into a temporary directory, and ruff runs
+- **A second gate: ruff** (`collect/gates.py`). The changed Python files, as
+  the collector read them at the head for the file rules (the gate reads for
+  itself only one the collector did not read whole), are written into a
+  temporary directory, and ruff runs
   there, `--isolated` with the rules `config.toml`'s `[lint]` selects and ignores, never the reviewed repository's
   own configuration, and `--ignore-noqa`, so no comment in the branch
   silences it. Each file is written into a folder of its own, under a name

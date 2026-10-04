@@ -332,11 +332,35 @@ class TestTheLintGate:
         evidence = git.collect_evidence(str(demo_repo), BASE, HEAD)
         monkeypatch.setattr(gates, "RUFF_TIMEOUT_S", 1e-6)
         assert gates.lint_findings(evidence, SELECT) == "ruff did not answer within 1e-06 s, so the gate did not look"
+        for entry in evidence["files"]:  # a file the collector did not read whole: the gate reads it itself
+            entry["text"] = None
         monkeypatch.setattr(git, "GIT_TIMEOUT_S", 1e-6)
         assert (
             gates.lint_findings(evidence, SELECT)
             == "git ls-tree did not answer within 1e-06 s, so the gate did not look"
         )
+
+    def test_the_gate_lints_what_the_collector_read_and_asks_git_only_for_the_rest(
+        self, demo_repo: Path, monkeypatch
+    ) -> None:
+        """The head is read once: the collector's texts, read for the file rules, are what ruff lints, and the gate
+        reads for itself only a file the collector did not read whole. Measured before: the gate listed the whole
+        tree and read every changed file again, two more git processes a review."""
+        from phase_7_hardened.collect import gates, git
+
+        evidence = git.collect_evidence(str(demo_repo), BASE, HEAD)
+        asked, real = [], gates.files_at_head
+
+        def counted(resolved, paths):
+            asked.append(list(paths))
+            return real(resolved, paths)
+
+        monkeypatch.setattr(gates, "files_at_head", counted)
+        found = gates.lint_findings(evidence, SELECT)
+        assert found and asked == [], "every changed file was read already"
+        unread = next(f for f in evidence["files"] if f["path"].endswith(".py"))
+        unread["text"], unread["unread_text"] = None, "was not read whole"
+        assert gates.lint_findings(evidence, SELECT) == found and asked == [[unread["path"]]]
 
     def test_a_ruff_hit_with_no_code_is_the_parse_failure_it_reports(self, demo_repo: Path, monkeypatch) -> None:
         """ruff 0.12.0 to 0.12.7 report a file that does not parse with `"code": null`. Measured by review: the gate

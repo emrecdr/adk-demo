@@ -5,7 +5,7 @@ deterministically, before any model runs, and adding a gate is a function.
 Ruff runs with `--isolated` and the rules `config.toml` selects and ignores, never the
 reviewed repository's own configuration: a change must not be able to configure the
 gate that judges it, nor, with `--ignore-noqa`, silence it line by line. The
-files are written from the head commit into a temporary directory; nothing
+files, as the collector read them at the head commit, are written into a temporary directory; nothing
 runs from, or writes into, the repository under review. Without ruff on
 `PATH`, or with one that fails, the gate did not look, and says so: its
 answer is the reason, the run is degraded and the report names it, for the
@@ -102,11 +102,11 @@ def lint_findings(evidence: dict, select: Sequence[str], ignore: Sequence[str] =
     ruff = on_path("ruff")  # by its full path: on Windows the current directory is searched first
     if ruff == "ruff":  # the name alone: found nowhere on PATH
         return "ruff is not on PATH, so the gate did not look; `uv run` puts the project's own there"
-    paths = [f["path"] for f in evidence["files"] if f["path"].endswith(".py") and f["status"] != "D"]
-    if not paths:
+    files = [f for f in evidence["files"] if f["path"].endswith(".py") and f["status"] != "D"]
+    if not files:
         return []
     try:
-        return _lint(ruff, paths, evidence["preflight"], select, ignore)
+        return _lint(ruff, _at_head(files, evidence["preflight"]), select, ignore)
     except GitError as exc:
         return f"{exc}, so the gate did not look"
     except OSError as exc:  # a disk that refuses the write: full, or read-only
@@ -120,15 +120,25 @@ def lint_findings(evidence: dict, select: Sequence[str], ignore: Sequence[str] =
         return f"ruff did not answer within {RUFF_TIMEOUT_S} s, so the gate did not look"
 
 
-def _lint(ruff: str, paths: list[str], resolved: dict, select: Sequence[str], ignore: Sequence[str]) -> list[Finding]:
-    """Ruff over `paths` as they stand at the head, written into a temporary directory: its findings, or it raises
-    — git failing to read a file, ruff failing, or git or ruff past its timeout — for `lint_findings` to name.
-    Under `--exit-zero` a finding never fails ruff, so any other exit is a ruff that could not run."""
+def _at_head(files: list[dict], resolved: dict) -> dict[str, str]:
+    """Each changed Python file's text at the head, by path in the collector's order: the text it read for the file
+    rules where it did, and for a file it did not read whole — over a cap, or in a tree that could not be listed —
+    `files_at_head`'s own read, which raises for the gate to name. The head is read once for every check."""
+    texts = {f["path"]: f.get("text") for f in files}
+    if unread := [path for path, text in texts.items() if text is None]:
+        texts.update(zip(unread, files_at_head(resolved, unread), strict=True))
+    return texts
+
+
+def _lint(ruff: str, texts: dict[str, str], select: Sequence[str], ignore: Sequence[str]) -> list[Finding]:
+    """Ruff over each file's text as it stands at the head, written into a temporary directory: its findings, or it
+    raises — ruff failing, or past its timeout — for `lint_findings` to name. Under `--exit-zero` a finding never
+    fails ruff, so any other exit is a ruff that could not run."""
     with tempfile.TemporaryDirectory() as tmp:
+        paths = list(texts)
         sources: dict[str, list[str]] = {}
         targets = []
-        texts = files_at_head(resolved, paths)
-        for index, (path, text) in enumerate(zip(paths, texts, strict=True)):
+        for index, (path, text) in enumerate(texts.items()):
             # Each in a folder of its own, under a name of the gate's own, never the branch's: `x.py` beside
             # `X.py/y.py` collided on a case-insensitive disk, `../../x.py` was written outside the folder, and
             # Windows holds no `nul.py`, `a:b.py` or control character. Ruff, `--isolated`, reads only the name

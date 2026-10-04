@@ -1089,6 +1089,12 @@ review; a change that works on one arm is not finished.
   reports the attempt on this reviewer's own prompts is not measured here.
 
 ---
+- **The head is read once, for every check.** The lint gate listed the tree
+  and read every changed Python file again, after the collector had read the
+  same texts for the file rules. It lints the collector's texts now and reads
+  for itself only a file the collector did not read whole; measured on the
+  demo branch, a gates-only review ran 17 git processes, now 15, the same
+  verdict.
 
 ## 13. Presenter's checklist
 
